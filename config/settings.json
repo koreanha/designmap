@@ -13,21 +13,27 @@
       "enabled": true
     },
     "uspto": {
-      "base_url": "https://developer.uspto.gov/api",
+      "base_url": "https://api.patentsview.org",
       "api_key_env": "USPTO_API_KEY",
-      "enabled": false
+      "enabled": true,
+      "note": "PatentsView API - API key optional but recommended"
     },
     "euipo": {
-      "base_url": "https://euipo.europa.eu/eSearch",
-      "enabled": false
+      "base_url": "https://euipo.europa.eu/eSearch/api",
+      "enabled": true,
+      "note": "eSearch plus API - no API key required"
     },
     "cnipa": {
-      "base_url": "https://english.cnipa.gov.cn",
-      "enabled": false
+      "base_url": "https://patents.google.com",
+      "api_key_env": "CNIPA_API_KEY",
+      "enabled": true,
+      "note": "Via Google Patents - direct CNIPA API not publicly available"
     },
     "jpo": {
-      "base_url": "https://www.j-platpat.inpit.go.jp",
-      "enabled": false
+      "base_url": "https://www.j-platpat.inpit.go.jp/api",
+      "api_key_env": "JPO_API_KEY",
+      "enabled": true,
+      "note": "J-PlatPat API"
     }
   },
   "screening": {

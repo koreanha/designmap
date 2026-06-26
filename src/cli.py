@@ -60,13 +60,25 @@ def collect(
 
 async def _collect(source, locarno, keyword, date_from, date_to, max_results):
     from src.collectors.kipris import KIPRISCollector
+    from src.collectors.uspto import USPTOCollector
+    from src.collectors.euipo import EUIPOCollector
+    from src.collectors.cnipa import CNIPACollector
+    from src.collectors.jpo import JPOCollector
     from src.utils.database import Database
 
-    if source == "kipris":
-        collector = KIPRISCollector()
-    else:
-        console.print(f"[red]지원하지 않는 소스: {source}[/red]")
+    collectors = {
+        "kipris": KIPRISCollector,
+        "uspto": USPTOCollector,
+        "euipo": EUIPOCollector,
+        "cnipa": CNIPACollector,
+        "jpo": JPOCollector,
+    }
+
+    if source not in collectors:
+        console.print(f"[red]지원하지 않는 소스: {source}. 사용 가능: {', '.join(collectors)}[/red]")
         return
+
+    collector = collectors[source]()
 
     console.print(f"[cyan]수집 중... (로카르노: {locarno})[/cyan]")
     patents = await collector.search(locarno, keyword, date_from, date_to, max_results)

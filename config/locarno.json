@@ -1,0 +1,185 @@
+{
+  "version": "14th Edition (2023)",
+  "classes": {
+    "01": {
+      "name_en": "Foodstuffs and tobacco",
+      "name_ko": "식료품 및 담배",
+      "subclasses": {
+        "01-01": "Bakers' products, biscuits, pastry, macaroni and other cereal products",
+        "01-02": "Fruit and vegetables",
+        "01-03": "Cheeses, butter and butter substitutes",
+        "01-04": "Butchers' meat",
+        "01-05": "Confectionery",
+        "01-06": "Animal foodstuffs",
+        "01-99": "Miscellaneous"
+      }
+    },
+    "02": {
+      "name_en": "Articles of clothing and haberdashery",
+      "name_ko": "의류 및 잡화",
+      "subclasses": {
+        "02-01": "Undergarments, lingerie, corsets, brassieres, nightwear",
+        "02-02": "Garments",
+        "02-03": "Headwear",
+        "02-04": "Footwear, socks and stockings",
+        "02-05": "Neckties, scarves, neckerchiefs and handkerchiefs",
+        "02-06": "Gloves",
+        "02-07": "Haberdashery and clothing accessories",
+        "02-99": "Miscellaneous"
+      }
+    },
+    "03": {
+      "name_en": "Travel goods, cases, parasols and personal belongings",
+      "name_ko": "여행용품, 케이스, 양산 및 개인소지품",
+      "subclasses": {
+        "03-01": "Trunks, suitcases, briefcases, handbags, keyholders, cases",
+        "03-02": "Purses",
+        "03-03": "Bags",
+        "03-04": "Umbrellas, parasols, sunshades and walking sticks",
+        "03-99": "Miscellaneous"
+      }
+    },
+    "06": {
+      "name_en": "Furnishing",
+      "name_ko": "가구",
+      "subclasses": {
+        "06-01": "Seats",
+        "06-02": "Beds",
+        "06-03": "Tables and similar furniture",
+        "06-04": "Storage furniture",
+        "06-05": "Composite furniture",
+        "06-06": "Other furniture and furniture parts",
+        "06-07": "Mirrors and frames",
+        "06-08": "Clothes hangers",
+        "06-09": "Mattresses and cushions",
+        "06-10": "Curtains and indoor blinds",
+        "06-11": "Carpets, mats and rugs",
+        "06-12": "Tapestries",
+        "06-13": "Blankets and other covering materials",
+        "06-99": "Miscellaneous"
+      }
+    },
+    "07": {
+      "name_en": "Household goods",
+      "name_ko": "가정용품",
+      "subclasses": {
+        "07-01": "China, glassware, dishes and other articles",
+        "07-02": "Cooking appliances, utensils and containers",
+        "07-03": "Table knives, forks and spoons",
+        "07-04": "Appliances and utensils for preparing food or drink",
+        "07-05": "Flatirons and washing, cleaning and drying equipment",
+        "07-06": "Other table utensils",
+        "07-07": "Other household receptacles",
+        "07-08": "Fireplace implements",
+        "07-99": "Miscellaneous"
+      }
+    },
+    "09": {
+      "name_en": "Packages and containers for the transport or handling of goods",
+      "name_ko": "물품의 운반 또는 취급용 포장 및 용기",
+      "subclasses": {
+        "09-01": "Bottles, flasks, pots, carboys, demijohns and containers with dynamic dispensing means",
+        "09-02": "Cans",
+        "09-03": "Boxes, cases, containers, (preserve) tins or cans",
+        "09-04": "Hampers, crates and baskets",
+        "09-05": "Bags, sachets, tubes and capsules",
+        "09-06": "Ropes and hooping materials",
+        "09-07": "Closing means and attachments",
+        "09-08": "Pallets and platforms for forklifts",
+        "09-09": "Refuse and trash containers and stands therefor",
+        "09-99": "Miscellaneous"
+      }
+    },
+    "12": {
+      "name_en": "Means of transport or hoisting",
+      "name_ko": "운송 또는 권양수단",
+      "subclasses": {
+        "12-01": "Vehicles drawn by animals",
+        "12-02": "Carts, wheelbarrows",
+        "12-03": "Locomotives and rolling stock for railways",
+        "12-04": "Telpher and chair-lift cabins",
+        "12-05": "Elevators and hoists for loading",
+        "12-06": "Ships and boats",
+        "12-07": "Aircraft and space vehicles",
+        "12-08": "Motor cars, buses and lorries",
+        "12-09": "Tractors",
+        "12-10": "Road vehicle trailers",
+        "12-11": "Cycles and motorcycles",
+        "12-12": "Perambulators, invalid chairs and stretchers",
+        "12-13": "Special-purpose vehicles",
+        "12-14": "Other vehicles",
+        "12-15": "Tyres and anti-skid chains for vehicles",
+        "12-16": "Other parts, fittings and accessories of vehicles",
+        "12-99": "Miscellaneous"
+      }
+    },
+    "14": {
+      "name_en": "Recording, telecommunication or data processing equipment",
+      "name_ko": "기록, 통신 또는 정보처리장치",
+      "subclasses": {
+        "14-01": "Equipment for the recording or reproduction of sounds or pictures",
+        "14-02": "Data processing equipment and peripheral apparatus",
+        "14-03": "Telecommunication equipment, wireless remote controls and radio amplifiers",
+        "14-04": "Screen displays and icons",
+        "14-99": "Miscellaneous"
+      }
+    },
+    "15": {
+      "name_en": "Machines",
+      "name_ko": "기계류",
+      "subclasses": {
+        "15-01": "Engines",
+        "15-02": "Pumps and compressors",
+        "15-03": "Agricultural machinery",
+        "15-04": "Construction machinery",
+        "15-05": "Washing, cleaning and drying machines",
+        "15-06": "Textile, sewing, knitting and embroidering machines",
+        "15-07": "Refrigeration machinery and apparatus",
+        "15-09": "Machine tools",
+        "15-99": "Miscellaneous"
+      }
+    },
+    "23": {
+      "name_en": "Fluid distribution equipment, sanitary, heating, ventilation and air-conditioning equipment, solid fuel",
+      "name_ko": "유체분배장치, 위생, 난방, 환기 및 공기조화장치, 고체연료",
+      "subclasses": {
+        "23-01": "Fluid distribution equipment",
+        "23-02": "Sanitary appliances",
+        "23-03": "Heating equipment",
+        "23-04": "Ventilation and air-conditioning equipment",
+        "23-05": "Solid fuel",
+        "23-99": "Miscellaneous"
+      }
+    },
+    "26": {
+      "name_en": "Lighting apparatus",
+      "name_ko": "조명기구",
+      "subclasses": {
+        "26-01": "Candlesticks and candelabra",
+        "26-02": "Torches and hand lamps and lanterns",
+        "26-03": "Public lighting fixtures",
+        "26-04": "Luminous sources, electrical or not",
+        "26-05": "Lamps, standard lamps, chandeliers, wall and ceiling fixtures, lampshades",
+        "26-06": "Luminous devices for vehicles",
+        "26-99": "Miscellaneous"
+      }
+    },
+    "31": {
+      "name_en": "Machines and appliances for preparing food or drink",
+      "name_ko": "음식물 또는 음료 조리용 기계 및 기구",
+      "subclasses": {
+        "31-00": "Machines and appliances for preparing food or drink",
+        "31-99": "Miscellaneous"
+      }
+    },
+    "32": {
+      "name_en": "Graphic symbols and logos, surface patterns, ornamentation, arrangement of interiors and exteriors",
+      "name_ko": "그래픽 심볼 및 로고, 표면패턴, 장식, 실내외 배치",
+      "subclasses": {
+        "32-00": "Graphic symbols and logos, surface patterns, ornamentation",
+        "32-99": "Miscellaneous"
+      }
+    }
+  },
+  "_note": "Abbreviated. Full Locarno classification has 32 classes with detailed subclasses."
+}

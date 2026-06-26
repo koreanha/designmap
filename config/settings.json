@@ -1,0 +1,46 @@
+{
+  "database": {
+    "url": "sqlite+aiosqlite:///data/designmap.db"
+  },
+  "collectors": {
+    "kipris": {
+      "base_url": "http://plus.kipris.or.kr/kipo-api/kipi",
+      "api_key_env": "KIPRIS_API_KEY",
+      "enabled": true
+    },
+    "wipo": {
+      "base_url": "https://www.wipo.int/designdb/hague/en",
+      "enabled": true
+    },
+    "uspto": {
+      "base_url": "https://developer.uspto.gov/api",
+      "api_key_env": "USPTO_API_KEY",
+      "enabled": false
+    },
+    "euipo": {
+      "base_url": "https://euipo.europa.eu/eSearch",
+      "enabled": false
+    },
+    "cnipa": {
+      "base_url": "https://english.cnipa.gov.cn",
+      "enabled": false
+    },
+    "jpo": {
+      "base_url": "https://www.j-platpat.inpit.go.jp",
+      "enabled": false
+    }
+  },
+  "screening": {
+    "min_confidence": 0.7,
+    "max_noise_ratio": 0.3
+  },
+  "classifier": {
+    "model": "claude-sonnet-4-6",
+    "max_images_per_request": 10,
+    "vision_enabled": true
+  },
+  "analysis": {
+    "pest_enabled": true,
+    "trend_window_years": 5
+  }
+}

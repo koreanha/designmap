@@ -46,6 +46,94 @@ async def _save_patents(db, patents):
 
 
 @app.command()
+def parse_pdf(
+    directory: str = typer.Argument(..., help="PDF 파일이 있는 디렉토리 경로"),
+    office: str = typer.Option(..., help="특허청 코드 (KIPO, USPTO, EUIPO, CNIPA, JPO)"),
+    output: str = typer.Option("data/parsed_patents.xlsx", help="결과 Excel 저장 경로"),
+    drawings_dir: str | None = typer.Option(None, help="도면 이미지 저장 디렉토리"),
+    no_vision: bool = typer.Option(False, help="Claude Vision OCR 비활성화 (텍스트 추출만 사용)"),
+    no_db: bool = typer.Option(False, help="DB 저장 건너뛰기"),
+    recursive: bool = typer.Option(True, help="하위 디렉토리까지 검색"),
+):
+    """PDF 원문공보에서 디자인권 데이터 추출 → Excel 변환
+
+    각국 특허청의 디자인 공보 PDF 파일에서 서지사항(출원번호, 물품명, 출원인, 로카르노 분류 등)과
+    도면 이미지를 추출하여 구조화된 Excel 파일과 DB로 저장합니다.
+
+    예시:
+        designmap parse-pdf /data/kr_patents --office KIPO
+        designmap parse-pdf /data/us_patents --office USPTO --no-vision
+        designmap parse-pdf /data/mixed --office JPO --drawings-dir /data/drawings
+    """
+    asyncio.run(_parse_pdf(directory, office, output, drawings_dir, no_vision, no_db, recursive))
+
+
+async def _parse_pdf(directory, office, output, drawings_dir, no_vision, no_db, recursive):
+    from src.collectors.pdf_parser import GazetteParser
+    from src.utils.database import Database
+
+    office = office.upper()
+    valid_offices = ["KIPO", "USPTO", "EUIPO", "CNIPA", "JPO"]
+    if office not in valid_offices:
+        console.print(f"[red]지원하지 않는 특허청: {office}. 사용 가능: {', '.join(valid_offices)}[/red]")
+        return
+
+    dir_path = Path(directory)
+    if not dir_path.exists():
+        console.print(f"[red]디렉토리가 존재하지 않습니다: {directory}[/red]")
+        return
+
+    pdf_count = len(list(dir_path.glob("**/*.pdf" if recursive else "*.pdf")))
+    if pdf_count == 0:
+        console.print(f"[yellow]PDF 파일이 없습니다: {directory}[/yellow]")
+        return
+
+    console.print(f"[cyan]{office} 공보 PDF {pdf_count}건 파싱 시작...[/cyan]")
+    if no_vision:
+        console.print("[dim]Vision OCR 비활성화 - 텍스트 추출만 사용[/dim]")
+
+    parser = GazetteParser(use_vision=not no_vision)
+    patents = parser.parse_directory(directory, office, drawings_dir, recursive)
+
+    console.print(f"[green]{len(patents)}/{pdf_count}건 파싱 성공[/green]")
+
+    if patents:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        parser.to_excel(patents, output)
+        console.print(f"[green]Excel 저장: {output}[/green]")
+
+        if not no_db:
+            db = Database()
+            await db.init()
+            for p in patents:
+                await db.save_patent(p)
+            console.print(f"[green]DB 저장 완료: {len(patents)}건[/green]")
+
+    table = Table(title="파싱 결과 요약")
+    table.add_column("항목")
+    table.add_column("값")
+    table.add_row("입력 PDF", str(pdf_count))
+    table.add_row("파싱 성공", str(len(patents)))
+    table.add_row("파싱 실패", str(pdf_count - len(patents)))
+
+    if patents:
+        from collections import Counter
+        locarno_counts = Counter(p.locarno_class for p in patents)
+        table.add_row("로카르노 분류", ", ".join(f"{k}({v}건)" for k, v in locarno_counts.most_common(5)))
+        has_drawings = sum(1 for p in patents if p.drawings)
+        table.add_row("도면 보유", f"{has_drawings}건")
+        has_desc = sum(1 for p in patents if p.design_description)
+        table.add_row("설명 보유", f"{has_desc}건")
+
+    console.print(table)
+
+    if pdf_count - len(patents) > 0:
+        console.print("[yellow]파싱 실패 파일은 텍스트 추출이 어려운 스캔 PDF일 수 있습니다.[/yellow]")
+        if no_vision:
+            console.print("[yellow]--no-vision 플래그를 제거하면 Claude Vision OCR로 재시도할 수 있습니다.[/yellow]")
+
+
+@app.command()
 def collect(
     source: str = typer.Option("kipris", help="데이터 소스 (kipris, wipo)"),
     locarno: str = typer.Option(..., help="로카르노 분류 코드 (예: 14-02)"),

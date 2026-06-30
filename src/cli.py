@@ -288,7 +288,9 @@ async def _propose(locarno, context, output):
     proposer = CriteriaProposer()
 
     console.print("[cyan]분류 기준 제안 중...[/cyan]")
-    criteria = await proposer.propose_criteria(patents, locarno_list, context)
+    criteria, ok = await _run_ai_step(proposer.propose_criteria(patents, locarno_list, context))
+    if not ok:
+        return
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(
@@ -343,7 +345,9 @@ async def _classify(criteria_file, output):
     classifier = DesignClassifier(criteria)
 
     console.print(f"[cyan]{len(patents)}건 분류 중...[/cyan]")
-    results = await classifier.classify_batch(patents)
+    results, ok = await _run_ai_step(classifier.classify_batch(patents))
+    if not ok:
+        return
 
     for r in results:
         await db.save_classification(r)
@@ -408,7 +412,9 @@ async def _report(criteria_file, results_file, context, output):
     stats = analyzer.compute_statistics(patents, results)
 
     console.print("[cyan]트렌드 리포트 생성 중...[/cyan]")
-    report_text = await analyzer.generate_trend_report(stats, criteria, context)
+    report_text, ok = await _run_ai_step(analyzer.generate_trend_report(stats, criteria, context))
+    if not ok:
+        return
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(report_text, encoding="utf-8")
@@ -481,6 +487,21 @@ async def _status():
     else:
         nxt = "designmap report"
     console.print(f"[cyan]다음 단계 →[/cyan] {nxt}")
+
+
+async def _run_ai_step(coro):
+    """AI 호출 실행 + API 오류 친절 안내. 성공: (값, True), 실패: (None, False)."""
+    import anthropic
+    from src.utils.ai import friendly_api_error
+
+    try:
+        return await coro, True
+    except anthropic.APIError as e:
+        friendly = friendly_api_error(e)
+        if friendly:
+            console.print(f"[red]{friendly}[/red]")
+            return None, False
+        raise
 
 
 def _require_api_key() -> bool:

@@ -31,3 +31,23 @@ def get_client() -> anthropic.Anthropic:
     if not api_key_available():
         raise MissingAPIKeyError(_MISSING_KEY_MESSAGE)
     return anthropic.Anthropic()
+
+
+def friendly_api_error(exc: Exception) -> str | None:
+    """Anthropic API 오류를 비전공자용 한글 안내로 변환. 해당 없으면 None."""
+    msg = str(exc).lower()
+    if "credit balance is too low" in msg or "plans & billing" in msg or "billing" in msg:
+        return (
+            "Claude AI 사용 크레딧(잔액)이 부족합니다.\n"
+            "AI를 쓰는 단계(propose/classify/report)는 Claude 유료 API를 사용합니다.\n"
+            "해결: https://console.anthropic.com 접속 → 왼쪽 'Plans & Billing'(또는 Billing) →\n"
+            "      결제수단 등록 후 크레딧 구매(보통 소액으로 충분) → 다시 실행하세요."
+        )
+    if "invalid x-api-key" in msg or "authentication" in msg or "401" in msg:
+        return (
+            "AI 열쇠(ANTHROPIC_API_KEY)가 올바르지 않습니다.\n"
+            "console.anthropic.com 에서 키를 다시 발급받아 등록하세요 (sk-ant-... 로 시작)."
+        )
+    if "rate limit" in msg or "429" in msg:
+        return "Claude API 요청이 일시적으로 많습니다(rate limit). 잠시 후 다시 시도하세요."
+    return None

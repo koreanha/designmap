@@ -9,7 +9,7 @@ import json
 
 from src.models import DesignPatent, ClassificationCriteria, CriterionDimension, PESTFactor
 from src.models.criteria import PESTCategory
-from src.utils.ai import get_client, DEFAULT_MODEL
+from src.utils.ai import get_client, DEFAULT_MODEL, parse_json_response
 from src.utils.image_loader import load_image_as_base64
 
 
@@ -99,16 +99,26 @@ JSON 형식:
 }}""",
         })
 
-        response = self.client.messages.create(
-            model=DEFAULT_MODEL,
-            max_tokens=4000,
-            messages=[{"role": "user", "content": content}],
-        )
-
-        text = response.content[0].text
-        start = text.index("{")
-        end = text.rindex("}") + 1
-        data = json.loads(text[start:end])
+        data = None
+        last_err = None
+        for attempt in range(2):
+            response = self.client.messages.create(
+                model=DEFAULT_MODEL,
+                max_tokens=8000,
+                system=(
+                    "반드시 유효한 JSON 하나만 출력하세요. 마크다운 코드펜스나 설명 문장 없이, "
+                    "모든 문자열은 올바르게 이스케이프하고 배열/객체 요소는 쉼표로 구분합니다."
+                ),
+                messages=[{"role": "user", "content": content}],
+            )
+            try:
+                data = parse_json_response(response.content[0].text)
+                break
+            except json.JSONDecodeError as e:
+                last_err = e
+                continue
+        if data is None:
+            raise last_err
 
         dimensions = [
             CriterionDimension(**d) for d in data.get("dimensions", [])

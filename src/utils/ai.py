@@ -33,6 +33,34 @@ def get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic()
 
 
+def parse_json_response(text: str) -> dict:
+    """AI 응답 문자열에서 JSON을 최대한 견고하게 추출.
+
+    - ```json ... ``` 코드펜스 제거
+    - 첫 '{' ~ 마지막 '}' 구간만 사용
+    - 흔한 오류(맨 끝 trailing comma) 보정 시도
+    실패 시 json.JSONDecodeError 발생.
+    """
+    import json
+    import re
+
+    t = (text or "").strip()
+    m = re.search(r"```(?:json)?\s*(.*?)```", t, re.DOTALL)
+    if m:
+        t = m.group(1).strip()
+    if "{" in t and "}" in t:
+        t = t[t.index("{"): t.rindex("}") + 1]
+
+    candidates = [t, re.sub(r",(\s*[}\]])", r"\1", t)]
+    last_err: Exception | None = None
+    for cand in candidates:
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError as e:
+            last_err = e
+    raise last_err  # type: ignore[misc]
+
+
 def friendly_api_error(exc: Exception) -> str | None:
     """Anthropic API 오류를 비전공자용 한글 안내로 변환. 해당 없으면 None."""
     msg = str(exc).lower()

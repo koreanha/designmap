@@ -491,6 +491,8 @@ async def _status():
 
 async def _run_ai_step(coro):
     """AI 호출 실행 + API 오류 친절 안내. 성공: (값, True), 실패: (None, False)."""
+    import json as _json
+
     import anthropic
     from src.utils.ai import friendly_api_error
 
@@ -502,6 +504,10 @@ async def _run_ai_step(coro):
             console.print(f"[red]{friendly}[/red]")
             return None, False
         raise
+    except (_json.JSONDecodeError, ValueError) as e:
+        console.print("[red]AI 응답을 해석하지 못했습니다(JSON 형식 오류). 잠시 후 다시 실행해 주세요.[/red]")
+        console.print(f"[dim](상세: {e})[/dim]")
+        return None, False
 
 
 def _require_api_key() -> bool:

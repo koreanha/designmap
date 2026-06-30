@@ -187,3 +187,10 @@ def test_classify_drawings_assigns_types():
 def test_gazette_parser_init_no_vision():
     parser = GazetteParser(use_vision=False)
     assert not parser.use_vision
+
+
+def test_parse_json_response_robustness():
+    from src.utils.ai import parse_json_response
+    assert parse_json_response('```json\n{"a": 1}\n```') == {"a": 1}
+    assert parse_json_response('설명 {"a": [1,2,3]} 끝') == {"a": [1, 2, 3]}
+    assert parse_json_response('{"a": [1, 2,], "b": 3,}') == {"a": [1, 2], "b": 3}

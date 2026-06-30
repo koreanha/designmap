@@ -5,14 +5,19 @@ import json
 from collections import Counter, defaultdict
 from datetime import date
 
-import anthropic
-
 from src.models import ClassificationResult, DesignPatent, ClassificationCriteria
+from src.utils.ai import get_client, DEFAULT_MODEL
 
 
 class DesignRoadmapAnalyzer:
     def __init__(self):
-        self.client = anthropic.Anthropic()
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = get_client()
+        return self._client
 
     def compute_statistics(
         self,
@@ -91,7 +96,7 @@ class DesignRoadmapAnalyzer:
 한국어로 작성해주세요."""
 
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model=DEFAULT_MODEL,
             max_tokens=8000,
             messages=[{"role": "user", "content": prompt}],
         )

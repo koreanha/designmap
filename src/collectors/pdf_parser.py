@@ -22,10 +22,10 @@ from datetime import date
 from pathlib import Path
 
 import fitz  # PyMuPDF
-import anthropic
 
 from src.models import DesignPatent, DrawingImage
 from src.models.design_patent import PatentOffice, DrawingType
+from src.utils.ai import get_client, api_key_available
 
 
 class PDFExtractor:
@@ -327,10 +327,16 @@ class GazetteParser:
     """각국 디자인 공보 PDF를 파싱하여 구조화된 데이터로 변환"""
 
     def __init__(self, use_vision: bool = True):
-        self.use_vision = use_vision
+        # API 키가 없으면 Vision을 자동으로 끈다 (텍스트 추출만 사용)
+        self.use_vision = use_vision and api_key_available()
         self.extractor = PDFExtractor()
-        if use_vision:
-            self.client = anthropic.Anthropic()
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = get_client()
+        return self._client
 
     def parse_pdf(
         self,

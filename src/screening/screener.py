@@ -8,9 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import anthropic
-
 from src.models import DesignPatent, ScreeningResult
+from src.utils.ai import get_client, DEFAULT_MODEL
 from src.utils.image_loader import load_image_as_base64
 
 
@@ -21,12 +20,20 @@ class DesignScreener:
         target_keywords: list[str] | None = None,
         exclude_keywords: list[str] | None = None,
         min_confidence: float = 0.7,
+        use_ai: bool = True,
     ):
         self.target_locarno = target_locarno
         self.target_keywords = target_keywords or []
         self.exclude_keywords = exclude_keywords or []
         self.min_confidence = min_confidence
-        self.client = anthropic.Anthropic()
+        self.use_ai = use_ai
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = get_client()
+        return self._client
 
     def rule_based_screen(self, patent: DesignPatent) -> ScreeningResult | None:
         """규칙 기반 빠른 스크리닝 (API 호출 없이)"""
@@ -117,7 +124,7 @@ JSON으로 응답해주세요:
         })
 
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model=DEFAULT_MODEL,
             max_tokens=500,
             messages=[{"role": "user", "content": content}],
         )
@@ -142,11 +149,38 @@ JSON으로 응답해주세요:
                 reason="AI 스크리닝 응답 파싱 실패",
             )
 
+    def _rule_only_decision(self, patent: DesignPatent) -> ScreeningResult:
+        """AI를 쓰지 않을 때의 최종 판정.
+
+        로카르노가 일치하고 제외 키워드에 걸리지 않으면 통과로 간주한다.
+        (키워드 일치 여부는 확신을 높이는 용도일 뿐, 누락돼도 통과시킨다)
+        """
+        kw_matched = False
+        if self.target_keywords:
+            title = patent.title.lower()
+            desc = (patent.design_description or "").lower()
+            kw_matched = any(
+                kw.lower() in title or kw.lower() in desc for kw in self.target_keywords
+            )
+        return ScreeningResult(
+            patent_id=patent.id or patent.application_number,
+            passed=True,
+            confidence=0.7 if kw_matched else 0.6,
+            reason="규칙 기반 통과 (로카르노 일치, 제외 키워드 없음)",
+            matched_criteria=["locarno_match"] + (["keyword_match"] if kw_matched else []),
+        )
+
     async def screen(self, patent: DesignPatent) -> ScreeningResult:
-        """규칙 기반 → AI 순서로 스크리닝"""
+        """규칙 기반 → (AI) 순서로 스크리닝"""
         result = self.rule_based_screen(patent)
         if result and result.confidence >= self.min_confidence:
             return result
+        if not self.use_ai:
+            # 규칙으로 확정 못 한 경우: 로카르노 불일치/제외는 rule_based가 이미 처리했으므로
+            # 여기 오는 건 "통과 후보"다.
+            if result is not None and not result.passed:
+                return result
+            return self._rule_only_decision(patent)
         return await self.ai_screen(patent)
 
     async def screen_batch(self, patents: list[DesignPatent]) -> list[ScreeningResult]:

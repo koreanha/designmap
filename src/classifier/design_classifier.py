@@ -6,16 +6,15 @@ from __future__ import annotations
 
 import json
 
-import anthropic
-
 from src.models import DesignPatent, ClassificationResult, ClassificationCriteria
+from src.utils.ai import get_client, DEFAULT_MODEL
 from src.utils.image_loader import load_image_as_base64
 
 
 class DesignClassifier:
     def __init__(self, criteria: ClassificationCriteria):
         self.criteria = criteria
-        self.client = anthropic.Anthropic()
+        self.client = get_client()
 
     async def classify(self, patent: DesignPatent) -> ClassificationResult:
         content: list[dict] = []
@@ -72,7 +71,7 @@ class DesignClassifier:
         })
 
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model=DEFAULT_MODEL,
             max_tokens=1500,
             messages=[{"role": "user", "content": content}],
         )

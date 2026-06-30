@@ -189,31 +189,43 @@ def screen(
     keywords: str | None = typer.Option(None, help="대상 키워드 (콤마 구분)"),
     exclude: str | None = typer.Option(None, help="제외 키워드 (콤마 구분)"),
     confidence: float = typer.Option(0.7, help="최소 신뢰도"),
+    no_ai: bool = typer.Option(False, help="AI 없이 규칙 기반으로만 스크리닝 (API 키 불필요, 빠름)"),
 ):
-    """1차 스크리닝 - 노이즈 제거"""
-    asyncio.run(_screen(locarno, keywords, exclude, confidence))
+    """1차 스크리닝 - 노이즈 제거
+
+    기본은 규칙(로카르노/키워드)으로 거른 뒤, 애매한 건만 AI가 도면을 보고 판단합니다.
+    --no-ai 를 주면 AI 없이 규칙만으로 빠르게 처리합니다 (API 키/비용 불필요).
+    """
+    asyncio.run(_screen(locarno, keywords, exclude, confidence, no_ai))
 
 
-async def _screen(locarno, keywords, exclude, confidence):
+async def _screen(locarno, keywords, exclude, confidence, no_ai):
     from src.screening.screener import DesignScreener
+    from src.utils.ai import api_key_available
     from src.utils.database import Database
-    from src.models.design_patent import PatentOffice, DrawingImage, DesignPatent
 
     target_locarno = [l.strip() for l in locarno.split(",")]
     target_keywords = [k.strip() for k in keywords.split(",")] if keywords else None
     exclude_keywords = [k.strip() for k in exclude.split(",")] if exclude else None
 
-    screener = DesignScreener(target_locarno, target_keywords, exclude_keywords, confidence)
+    use_ai = not no_ai
+    if use_ai and not api_key_available():
+        console.print("[yellow]AI 열쇠(ANTHROPIC_API_KEY)가 없어 규칙 기반으로만 진행합니다.[/yellow]")
+        console.print("[dim]도면 기반 정밀 스크리닝을 원하면 열쇠 등록 후 다시 실행하세요.[/dim]")
+        use_ai = False
+
+    screener = DesignScreener(target_locarno, target_keywords, exclude_keywords, confidence, use_ai=use_ai)
     db = Database()
     await db.init()
 
     rows = await db.get_patents_by_locarno(target_locarno[0])
     if not rows:
-        console.print("[yellow]대상 디자인권이 없습니다. 먼저 데이터를 수집해주세요.[/yellow]")
+        console.print("[yellow]대상 디자인권이 없습니다. 먼저 parse-pdf/load 로 데이터를 넣어주세요.[/yellow]")
         return
 
     patents = [_row_to_patent(r) for r in rows]
-    console.print(f"[cyan]{len(patents)}건 스크리닝 중...[/cyan]")
+    mode = "규칙 기반" if not use_ai else "규칙+AI"
+    console.print(f"[cyan]{len(patents)}건 스크리닝 중... ({mode})[/cyan]")
 
     results = await screener.screen_batch(patents)
     passed = [r for r in results if r.passed]
@@ -243,7 +255,9 @@ def propose(
 async def _propose(locarno, context, output):
     from src.classifier.criteria_proposer import CriteriaProposer
     from src.utils.database import Database
-    from src.models.design_patent import PatentOffice, DrawingImage, DesignPatent
+
+    if not _require_api_key():
+        return
 
     locarno_list = [l.strip() for l in locarno.split(",")]
     db = Database()
@@ -286,6 +300,14 @@ async def _classify(criteria_file, output):
     from src.classifier.design_classifier import DesignClassifier
     from src.utils.database import Database
     from src.models import ClassificationCriteria
+
+    if not Path(criteria_file).exists():
+        console.print(f"[red]분류 기준 파일이 없습니다: {criteria_file}[/red]")
+        console.print("[yellow]먼저 'designmap propose' 로 분류 기준을 만들어주세요.[/yellow]")
+        return
+
+    if not _require_api_key():
+        return
 
     criteria_data = json.loads(Path(criteria_file).read_text(encoding="utf-8"))
     criteria = ClassificationCriteria(**criteria_data)
@@ -345,6 +367,18 @@ async def _report(criteria_file, results_file, context, output):
     from src.models import ClassificationCriteria, ClassificationResult
     from src.utils.database import Database
 
+    for f, hint in [
+        (criteria_file, "designmap propose"),
+        (results_file, "designmap classify"),
+    ]:
+        if not Path(f).exists():
+            console.print(f"[red]필요한 파일이 없습니다: {f}[/red]")
+            console.print(f"[yellow]먼저 '{hint}' 를 실행해주세요.[/yellow]")
+            return
+
+    if not _require_api_key():
+        return
+
     criteria_data = json.loads(Path(criteria_file).read_text(encoding="utf-8"))
     criteria = ClassificationCriteria(**criteria_data)
 
@@ -366,6 +400,82 @@ async def _report(criteria_file, results_file, context, output):
     Path(output).write_text(report_text, encoding="utf-8")
     console.print(f"[green]리포트 저장: {output}[/green]")
     console.print(Panel(report_text[:2000] + "..." if len(report_text) > 2000 else report_text, title="트렌드 리포트"))
+
+
+@app.command()
+def status():
+    """현재 진행 상황 확인 (수집/스크리닝/분류 건수)"""
+    asyncio.run(_status())
+
+
+async def _status():
+    from sqlalchemy import text
+    from src.utils.ai import api_key_available
+    from src.utils.database import Database
+
+    db = Database()
+    await db.init()
+
+    async with db.session_factory() as session:
+        total = (await session.execute(text("SELECT COUNT(*) FROM design_patents"))).scalar() or 0
+        screened = (await session.execute(text("SELECT COUNT(*) FROM screening_results"))).scalar() or 0
+        passed = (await session.execute(text("SELECT COUNT(*) FROM screening_results WHERE passed=1"))).scalar() or 0
+        classified = (await session.execute(text("SELECT COUNT(*) FROM classification_results"))).scalar() or 0
+
+        office_rows = (await session.execute(
+            text("SELECT patent_office, COUNT(*) c FROM design_patents GROUP BY patent_office")
+        )).fetchall()
+        locarno_rows = (await session.execute(
+            text("SELECT locarno_class, COUNT(*) c FROM design_patents GROUP BY locarno_class ORDER BY c DESC")
+        )).fetchall()
+
+    table = Table(title="DesignMap 진행 상황")
+    table.add_column("단계")
+    table.add_column("건수", justify="right")
+    table.add_row("① 입력된 디자인권", str(total))
+    table.add_row("② 스크리닝 완료", str(screened))
+    table.add_row("   └ 통과", str(passed))
+    table.add_row("⑤ 분류 완료", str(classified))
+    console.print(table)
+
+    if office_rows:
+        ot = Table(title="출원청별")
+        ot.add_column("출원청"); ot.add_column("건수", justify="right")
+        for office, c in office_rows:
+            ot.add_row(str(office), str(c))
+        console.print(ot)
+
+    if locarno_rows:
+        lt = Table(title="로카르노 분류별 (상위 10)")
+        lt.add_column("분류"); lt.add_column("건수", justify="right")
+        for loc, c in locarno_rows[:10]:
+            lt.add_row(str(loc), str(c))
+        console.print(lt)
+        if any(str(loc) == "99-99" for loc, _ in locarno_rows):
+            console.print("[yellow]※ 99-99 는 분류 인식 실패분입니다. parse-pdf 에 --locarno 옵션으로 기본값을 지정하세요.[/yellow]")
+
+    key = "[green]설정됨[/green]" if api_key_available() else "[red]없음 (propose/classify/report 불가)[/red]"
+    console.print(f"\nAI 열쇠(ANTHROPIC_API_KEY): {key}")
+
+    # 다음 할 일 안내
+    if total == 0:
+        nxt = "designmap parse-pdf [PDF폴더] --office KIPO --locarno 25"
+    elif screened == 0:
+        nxt = "designmap screen --locarno 25"
+    elif classified == 0:
+        nxt = "designmap propose --locarno 25  →  (기준 검토)  →  designmap classify"
+    else:
+        nxt = "designmap report"
+    console.print(f"[cyan]다음 단계 →[/cyan] {nxt}")
+
+
+def _require_api_key() -> bool:
+    """AI가 필요한 명령 실행 전 키 확인. 없으면 안내 후 False."""
+    from src.utils.ai import api_key_available, _MISSING_KEY_MESSAGE
+    if not api_key_available():
+        console.print(f"[red]{_MISSING_KEY_MESSAGE}[/red]")
+        return False
+    return True
 
 
 def _row_to_patent(row: dict):

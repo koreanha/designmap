@@ -1,6 +1,18 @@
 """DesignMap CLI - 디자인권 분류 에이전트."""
 from __future__ import annotations
 
+# macOS 보호 폴더(바탕화면 등)에서 실행될 때 일부 라이브러리가 현재 위치를
+# 확인(os.getcwd())하다 PermissionError로 죽는 것을 방지하기 위한 안전장치.
+# 현재 위치를 못 읽으면 접근 가능한 홈 폴더로 이동시킨 뒤 계속 진행한다.
+import os as _os
+try:
+    _os.getcwd()
+except OSError:
+    try:
+        _os.chdir(_os.path.expanduser("~"))
+    except OSError:
+        pass
+
 import asyncio
 import json
 from pathlib import Path

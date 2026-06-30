@@ -147,9 +147,11 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             re.compile(r"등록일[:\s]*([\d./-]+)", re.MULTILINE),
         ],
         "locarno_class": [
-            re.compile(r"로카르노\s*분류[:\s]*([\d-]+)", re.MULTILINE),
-            re.compile(r"LOC[:\s]*([\d-]+)", re.MULTILINE),
-            re.compile(r"국제\s*디자인\s*분류[:\s]*([\d-]+)", re.MULTILINE),
+            re.compile(r"로카르노\s*분류[^\d]{0,10}(\d{1,2}\s*-\s*\d{1,2})", re.MULTILINE),
+            re.compile(r"물품류[^\d]{0,10}(\d{1,2}\s*-\s*\d{1,2})", re.MULTILINE),
+            re.compile(r"국제\s*디자인\s*분류[^\d]{0,10}(\d{1,2}\s*-\s*\d{1,2})", re.MULTILINE),
+            re.compile(r"\(51\)[^\d]{0,15}(\d{1,2}\s*-\s*\d{1,2})", re.MULTILINE),
+            re.compile(r"\bLOC[^\d]{0,8}(\d{1,2}\s*-\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
         ],
         "local_class_codes": [
             re.compile(r"한국\s*디자인\s*분류[:\s]*([\w\d.-]+)", re.MULTILINE),
@@ -335,16 +337,23 @@ class GazetteParser:
         pdf_path: str,
         office: str,
         drawings_output_dir: str | None = None,
+        default_locarno: str | None = None,
     ) -> DesignPatent | None:
-        """단일 PDF 공보를 파싱하여 DesignPatent 반환"""
+        """단일 PDF 공보를 파싱하여 DesignPatent 반환
+
+        default_locarno: 텍스트에서 로카르노 분류를 찾지 못했을 때 사용할 기본값
+            (예: 25류만 모은 공보면 "25" 또는 "25-03"을 지정)
+        """
         pdf_path = str(Path(pdf_path).resolve())
         text = self.extractor.extract_text(pdf_path)
 
         result = self._regex_extract(text, office)
 
-        if not result.get("application_number") and not result.get("registration_number"):
-            if self.use_vision:
-                result = self._vision_extract(pdf_path, office, result)
+        # 핵심 서지정보(출원번호/등록번호)가 없거나, 분류·물품명이 비었으면 Vision으로 보완
+        no_id = not result.get("application_number") and not result.get("registration_number")
+        missing_core = not result.get("locarno_class") and not default_locarno
+        if self.use_vision and (no_id or missing_core or not result.get("title")):
+            result = self._vision_extract(pdf_path, office, result)
 
         if not result.get("application_number") and not result.get("registration_number"):
             return None
@@ -365,7 +374,7 @@ class GazetteParser:
             designer=result.get("designer"),
             filing_date=_parse_date_flexible(result.get("filing_date")),
             registration_date=_parse_date_flexible(result.get("registration_date")),
-            locarno_class=result.get("locarno_class") or "99-99",
+            locarno_class=_normalize_locarno(result.get("locarno_class") or default_locarno) or "99-99",
             local_class_codes=[c for c in [result.get("local_class_codes")] if c],
             design_description=result.get("design_description"),
             drawings=drawings,
@@ -380,6 +389,7 @@ class GazetteParser:
         office: str,
         drawings_output_dir: str | None = None,
         recursive: bool = True,
+        default_locarno: str | None = None,
     ) -> list[DesignPatent]:
         """디렉토리 내 모든 PDF를 파싱"""
         dir_path = Path(directory)
@@ -388,7 +398,7 @@ class GazetteParser:
 
         patents = []
         for pdf in pdf_files:
-            patent = self.parse_pdf(str(pdf), office, drawings_output_dir)
+            patent = self.parse_pdf(str(pdf), office, drawings_output_dir, default_locarno)
             if patent:
                 patents.append(patent)
 
@@ -537,6 +547,33 @@ JSON으로 응답해주세요:
             ))
 
         return drawings
+
+
+def _normalize_locarno(value: str | None) -> str | None:
+    """로카르노 분류 표기를 'XX-XX' 형식으로 정규화.
+
+    예: '2503' -> '25-03', '25-3' -> '25-03', '25' -> '25', 'LOC 25-03' -> '25-03'
+    """
+    if not value:
+        return None
+    value = str(value).strip()
+
+    # 'XX-XX' 또는 'XX-X' 형태 추출
+    m = re.search(r"(\d{1,2})\s*[-–]\s*(\d{1,2})", value)
+    if m:
+        return f"{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+
+    # 붙어있는 4자리 (예: 2503)
+    m = re.search(r"\b(\d{2})(\d{2})\b", value)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+
+    # 클래스 번호만 (예: 25)
+    m = re.search(r"\b(\d{1,2})\b", value)
+    if m:
+        return f"{int(m.group(1)):02d}"
+
+    return value
 
 
 def _parse_date_flexible(date_str: str | None) -> date | None:

@@ -5,8 +5,31 @@ from src.collectors.pdf_parser import (
     GazetteParser,
     PDFExtractor,
     _parse_date_flexible,
+    _normalize_locarno,
     OFFICE_PATTERNS,
 )
+
+
+def test_normalize_locarno_formats():
+    assert _normalize_locarno("25-03") == "25-03"
+    assert _normalize_locarno("2503") == "25-03"
+    assert _normalize_locarno("25-3") == "25-03"
+    assert _normalize_locarno("25") == "25"
+    assert _normalize_locarno("LOC 25-03") == "25-03"
+    assert _normalize_locarno("로카르노분류 12-08") == "12-08"
+    assert _normalize_locarno(None) is None
+
+
+def test_kipo_locarno_pattern_variants():
+    parser = GazetteParser(use_vision=False)
+    for text in [
+        "로카르노분류 25-03",
+        "물품류구분: 25-03",
+        "(51) Int. Cl. 25-03",
+    ]:
+        result = parser._regex_extract(text, "KIPO")
+        assert result.get("locarno_class", "").replace(" ", "").startswith("25-03") or \
+            _normalize_locarno(result.get("locarno_class")) == "25-03", f"실패: {text}"
 
 
 def test_parse_date_iso():

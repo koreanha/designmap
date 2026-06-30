@@ -49,6 +49,7 @@ async def _save_patents(db, patents):
 def parse_pdf(
     directory: str = typer.Argument(..., help="PDF 파일이 있는 디렉토리 경로"),
     office: str = typer.Option(..., help="특허청 코드 (KIPO, USPTO, EUIPO, CNIPA, JPO)"),
+    locarno: str | None = typer.Option(None, help="로카르노 분류 기본값 (예: 25). PDF에서 분류를 못 찾을 때 사용"),
     output: str = typer.Option("data/parsed_patents.xlsx", help="결과 Excel 저장 경로"),
     drawings_dir: str | None = typer.Option(None, help="도면 이미지 저장 디렉토리"),
     no_vision: bool = typer.Option(False, help="Claude Vision OCR 비활성화 (텍스트 추출만 사용)"),
@@ -65,10 +66,10 @@ def parse_pdf(
         designmap parse-pdf /data/us_patents --office USPTO --no-vision
         designmap parse-pdf /data/mixed --office JPO --drawings-dir /data/drawings
     """
-    asyncio.run(_parse_pdf(directory, office, output, drawings_dir, no_vision, no_db, recursive))
+    asyncio.run(_parse_pdf(directory, office, locarno, output, drawings_dir, no_vision, no_db, recursive))
 
 
-async def _parse_pdf(directory, office, output, drawings_dir, no_vision, no_db, recursive):
+async def _parse_pdf(directory, office, locarno, output, drawings_dir, no_vision, no_db, recursive):
     from src.collectors.pdf_parser import GazetteParser
     from src.utils.database import Database
 
@@ -92,8 +93,11 @@ async def _parse_pdf(directory, office, output, drawings_dir, no_vision, no_db, 
     if no_vision:
         console.print("[dim]Vision OCR 비활성화 - 텍스트 추출만 사용[/dim]")
 
+    if locarno:
+        console.print(f"[dim]로카르노 기본값 적용: {locarno} (PDF에서 분류를 못 찾으면 이 값 사용)[/dim]")
+
     parser = GazetteParser(use_vision=not no_vision)
-    patents = parser.parse_directory(directory, office, drawings_dir, recursive)
+    patents = parser.parse_directory(directory, office, drawings_dir, recursive, default_locarno=locarno)
 
     console.print(f"[green]{len(patents)}/{pdf_count}건 파싱 성공[/green]")
 

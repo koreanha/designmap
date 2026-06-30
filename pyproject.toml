@@ -29,6 +29,9 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",
 ]
+web = [
+    "streamlit>=1.36.0",
+]
 
 [project.scripts]
 designmap = "src.cli:app"

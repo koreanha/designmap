@@ -1,0 +1,32 @@
+"""프로젝트 데이터 경로 헬퍼.
+
+실행 위치(현재 작업 디렉토리)가 어디든, 데이터/DB가 항상 코드 폴더 옆의
+`data/` 디렉토리에 일관되게 저장되도록 절대 경로를 제공한다.
+
+(macOS 보호 폴더 회피용 chdir 등으로 cwd가 바뀌어도 DB/결과 위치가
+흔들리지 않게 하기 위함)
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+# .../designmap/src/utils/paths.py → parents[2] == 프로젝트 루트(designmap/)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
+
+
+def ensure_data_dir() -> Path:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR
+
+
+def data_path(*parts: str) -> str:
+    """data 디렉토리 하위 경로를 절대 경로 문자열로 반환 (디렉토리 자동 생성)."""
+    ensure_data_dir()
+    return str(DATA_DIR.joinpath(*parts))
+
+
+def default_db_url() -> str:
+    """SQLite 절대 경로 URL. data 디렉토리를 보장한다."""
+    ensure_data_dir()
+    return f"sqlite+aiosqlite:///{DATA_DIR / 'designmap.db'}"

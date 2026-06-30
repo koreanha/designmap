@@ -58,8 +58,11 @@ class ClassificationResultRow(Base):
 
 
 class Database:
-    def __init__(self, db_url: str = "sqlite+aiosqlite:///data/designmap.db"):
-        self.engine = create_async_engine(db_url, echo=False)
+    def __init__(self, db_url: str | None = None):
+        from src.utils.paths import default_db_url
+
+        self.db_url = db_url or default_db_url()
+        self.engine = create_async_engine(self.db_url, echo=False)
         self.session_factory = async_sessionmaker(self.engine, class_=AsyncSession)
 
     async def init(self):

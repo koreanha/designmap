@@ -22,12 +22,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from src.utils.paths import data_path
+
 app = typer.Typer(name="designmap", help="디자인권 분류 에이전트 - 디자인 로드맵 분석 및 트렌드 예측")
 console = Console()
 
 
 @app.command()
-def template(output: str = "data/template.xlsx"):
+def template(output: str = data_path("template.xlsx")):
     """데이터 입력용 Excel 템플릿 생성"""
     from src.collectors.manual import ManualCollector
 
@@ -62,7 +64,7 @@ def parse_pdf(
     directory: str = typer.Argument(..., help="PDF 파일이 있는 디렉토리 경로"),
     office: str = typer.Option(..., help="특허청 코드 (KIPO, USPTO, EUIPO, CNIPA, JPO)"),
     locarno: str | None = typer.Option(None, help="로카르노 분류 기본값 (예: 25). PDF에서 분류를 못 찾을 때 사용"),
-    output: str = typer.Option("data/parsed_patents.xlsx", help="결과 Excel 저장 경로"),
+    output: str = typer.Option(data_path("parsed_patents.xlsx"), help="결과 Excel 저장 경로"),
     drawings_dir: str | None = typer.Option(None, help="도면 이미지 저장 디렉토리"),
     no_vision: bool = typer.Option(False, help="Claude Vision OCR 비활성화 (텍스트 추출만 사용)"),
     no_db: bool = typer.Option(False, help="DB 저장 건너뛰기"),
@@ -258,7 +260,7 @@ async def _screen(locarno, keywords, exclude, confidence, no_ai):
 def propose(
     locarno: str = typer.Option(..., help="대상 로카르노 분류 (콤마 구분)"),
     context: str | None = typer.Option(None, help="도메인 컨텍스트 설명"),
-    output: str = typer.Option("data/proposed_criteria.json", help="제안 기준 저장 경로"),
+    output: str = typer.Option(data_path("proposed_criteria.json"), help="제안 기준 저장 경로"),
 ):
     """분류 기준 제안 (AI 기반)"""
     asyncio.run(_propose(locarno, context, output))
@@ -301,8 +303,8 @@ async def _propose(locarno, context, output):
 
 @app.command()
 def classify(
-    criteria_file: str = typer.Option("data/proposed_criteria.json", help="확정된 분류 기준 파일"),
-    output: str = typer.Option("data/classification_results.json", help="분류 결과 저장 경로"),
+    criteria_file: str = typer.Option(data_path("proposed_criteria.json"), help="확정된 분류 기준 파일"),
+    output: str = typer.Option(data_path("classification_results.json"), help="분류 결과 저장 경로"),
 ):
     """확정된 기준으로 디자인권 분류"""
     asyncio.run(_classify(criteria_file, output))
@@ -365,10 +367,10 @@ async def _classify(criteria_file, output):
 
 @app.command()
 def report(
-    criteria_file: str = typer.Option("data/proposed_criteria.json", help="분류 기준 파일"),
-    results_file: str = typer.Option("data/classification_results.json", help="분류 결과 파일"),
+    criteria_file: str = typer.Option(data_path("proposed_criteria.json"), help="분류 기준 파일"),
+    results_file: str = typer.Option(data_path("classification_results.json"), help="분류 결과 파일"),
     context: str | None = typer.Option(None, help="도메인 컨텍스트"),
-    output: str = typer.Option("data/trend_report.md", help="리포트 저장 경로"),
+    output: str = typer.Option(data_path("trend_report.md"), help="리포트 저장 경로"),
 ):
     """디자인 트렌드 예측 리포트 생성"""
     asyncio.run(_report(criteria_file, results_file, context, output))

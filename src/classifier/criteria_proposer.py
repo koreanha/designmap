@@ -120,9 +120,16 @@ JSON 형식:
         if data is None:
             raise last_err
 
-        dimensions = [
-            CriterionDimension(**d) for d in data.get("dimensions", [])
-        ]
+        return self._criteria_from_data(data, locarno_scope)
+
+    @staticmethod
+    def _criteria_from_data(
+        data: dict,
+        locarno_scope: list[str],
+        revision_notes: str | None = None,
+    ) -> ClassificationCriteria:
+        """AI가 반환한 dict를 ClassificationCriteria로 변환."""
+        dimensions = [CriterionDimension(**d) for d in data.get("dimensions", [])]
         pest_factors = [
             PESTFactor(
                 category=PESTCategory(f["category"]),
@@ -132,16 +139,63 @@ JSON 형식:
             )
             for f in data.get("pest_factors", [])
         ]
-
         return ClassificationCriteria(
             name=data.get("name", "Proposed Criteria"),
             description=data.get("description", ""),
-            locarno_scope=locarno_scope,
+            locarno_scope=data.get("locarno_scope") or locarno_scope,
             dimensions=dimensions,
             pest_factors=pest_factors,
             trend_keywords=data.get("trend_keywords", []),
             status="proposed",
+            revision_notes=revision_notes,
         )
+
+    async def refine_criteria(
+        self,
+        criteria: ClassificationCriteria,
+        feedback: str,
+    ) -> ClassificationCriteria:
+        """기존 분류 기준을 사용자 피드백에 따라 수정한 새 기준을 반환."""
+        current = json.dumps(criteria.model_dump(), ensure_ascii=False, indent=2)
+        prompt = f"""다음은 현재 디자인 분류 기준입니다. 사용자 피드백을 반영해 수정해주세요.
+
+## 현재 분류 기준 (JSON)
+{current}
+
+## 사용자 피드백 / 수정 요청
+{feedback}
+
+## 요청사항
+- 위 피드백을 반영하여 분류 기준 전체를 수정한 JSON을 출력하세요.
+- 기존 구조를 유지: name, description, dimensions(name/description/values/examples/weight),
+  pest_factors(category/factor/relevance/impact_level), trend_keywords
+- 피드백과 무관한 부분은 가능한 한 그대로 보존하세요.
+- category 값은 political/economic/social/technological 중 하나여야 합니다.
+
+JSON만 출력하세요."""
+
+        data = None
+        last_err = None
+        for _ in range(2):
+            response = self.client.messages.create(
+                model=DEFAULT_MODEL,
+                max_tokens=8000,
+                system=(
+                    "반드시 유효한 JSON 하나만 출력하세요. 마크다운 코드펜스나 설명 문장 없이, "
+                    "모든 문자열은 올바르게 이스케이프하고 배열/객체 요소는 쉼표로 구분합니다."
+                ),
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            )
+            try:
+                data = parse_json_response(response.content[0].text)
+                break
+            except json.JSONDecodeError as e:
+                last_err = e
+                continue
+        if data is None:
+            raise last_err
+
+        return self._criteria_from_data(data, criteria.locarno_scope, revision_notes=feedback)
 
     def format_criteria_for_review(self, criteria: ClassificationCriteria) -> str:
         """사용자 검토를 위해 분류 기준을 읽기 좋게 포맷"""

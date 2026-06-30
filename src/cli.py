@@ -281,6 +281,54 @@ def approve(
 
 
 @app.command()
+def refine(
+    feedback: str = typer.Option(..., help="수정 요청 내용 (예: '소재감 차원을 빼고 색채 전략을 추가해줘')"),
+    criteria_file: str = typer.Option(data_path("proposed_criteria.json"), help="수정할 분류 기준 파일"),
+    output: str | None = typer.Option(None, help="저장 경로 (기본: 원본 파일에 덮어쓰기)"),
+):
+    """제안된 분류 기준을 피드백에 따라 AI로 수정/보완
+
+    예시:
+        designmap refine --feedback "형태 언어와 비례 차원을 추가하고, 트렌드 키워드에 '모듈러'를 넣어줘"
+        designmap refine --feedback "차원이 너무 많아. 가장 중요한 3개로 줄여줘"
+    """
+    asyncio.run(_refine(feedback, criteria_file, output))
+
+
+async def _refine(feedback, criteria_file, output):
+    from src.classifier.criteria_proposer import CriteriaProposer
+    from src.models import ClassificationCriteria
+
+    if not Path(criteria_file).exists():
+        console.print(f"[red]파일이 없습니다: {criteria_file}[/red]")
+        console.print("[yellow]먼저 'designmap propose' 로 분류 기준을 만들어주세요.[/yellow]")
+        return
+    if not _require_api_key():
+        return
+
+    try:
+        criteria = ClassificationCriteria(**json.loads(Path(criteria_file).read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, ValueError) as e:
+        console.print(f"[red]기준 파일을 읽지 못했습니다: {e}[/red]")
+        return
+
+    proposer = CriteriaProposer()
+    console.print("[cyan]피드백 반영해 분류 기준 수정 중...[/cyan]")
+    revised, ok = await _run_ai_step(proposer.refine_criteria(criteria, feedback))
+    if not ok:
+        return
+
+    save_to = output or criteria_file
+    Path(save_to).parent.mkdir(parents=True, exist_ok=True)
+    Path(save_to).write_text(
+        json.dumps(revised.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    console.print(Panel(proposer.format_criteria_for_review(revised), title="수정된 분류 기준"))
+    console.print(f"[green]저장 완료: {save_to}[/green]")
+    console.print("[yellow]더 고치려면 다시 refine, 만족하면 'designmap approve' → 'designmap classify'[/yellow]")
+
+
+@app.command()
 def propose(
     locarno: str = typer.Option(..., help="대상 로카르노 분류 (콤마 구분)"),
     context: str | None = typer.Option(None, help="도메인 컨텍스트 설명"),

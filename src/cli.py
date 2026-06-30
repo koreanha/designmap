@@ -257,6 +257,30 @@ async def _screen(locarno, keywords, exclude, confidence, no_ai):
 
 
 @app.command()
+def approve(
+    criteria_file: str = typer.Option(data_path("proposed_criteria.json"), help="분류 기준 파일"),
+):
+    """제안된 분류 기준을 '승인(approved)' 상태로 변경 (직접 파일 수정 없이 안전하게)"""
+    path = Path(criteria_file)
+    if not path.exists():
+        console.print(f"[red]파일이 없습니다: {criteria_file}[/red]")
+        console.print("[yellow]먼저 'designmap propose' 로 분류 기준을 만들어주세요.[/yellow]")
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        console.print(f"[red]기준 파일이 손상되었습니다(JSON 오류): {e}[/red]")
+        console.print("[yellow]'designmap propose' 를 다시 실행해 파일을 새로 만들어주세요.[/yellow]")
+        return
+
+    prev = data.get("status", "proposed")
+    data["status"] = "approved"
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    console.print(f"[green]분류 기준 승인 완료 (status: {prev} → approved)[/green]")
+    console.print(f"[cyan]다음 단계 →[/cyan] designmap classify")
+
+
+@app.command()
 def propose(
     locarno: str = typer.Option(..., help="대상 로카르노 분류 (콤마 구분)"),
     context: str | None = typer.Option(None, help="도메인 컨텍스트 설명"),

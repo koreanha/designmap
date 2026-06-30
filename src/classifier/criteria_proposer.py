@@ -32,7 +32,7 @@ class CriteriaProposer:
         for p in sample:
             rep = p.representative_drawing
             source = (rep.file_path or rep.url) if rep else None
-            if source and image_count < 5:
+            if source and image_count < 3:
                 try:
                     b64, mime = await load_image_as_base64(source)
                     content.append({

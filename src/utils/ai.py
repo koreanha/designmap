@@ -27,10 +27,14 @@ def api_key_available() -> bool:
 
 
 def get_client() -> anthropic.Anthropic:
-    """Anthropic 클라이언트 반환. 키가 없으면 친절한 오류 발생."""
+    """Anthropic 클라이언트 반환. 키가 없으면 친절한 오류 발생.
+
+    느린/불안정한 네트워크를 고려해 타임아웃을 넉넉히 주고, 일시적 실패 시
+    자동 재시도하도록 설정한다.
+    """
     if not api_key_available():
         raise MissingAPIKeyError(_MISSING_KEY_MESSAGE)
-    return anthropic.Anthropic()
+    return anthropic.Anthropic(timeout=600.0, max_retries=4)
 
 
 def parse_json_response(text: str) -> dict:
@@ -78,4 +82,11 @@ def friendly_api_error(exc: Exception) -> str | None:
         )
     if "rate limit" in msg or "429" in msg:
         return "Claude API 요청이 일시적으로 많습니다(rate limit). 잠시 후 다시 시도하세요."
+    if "timed out" in msg or "timeout" in msg or "connection" in msg or "dropped" in msg:
+        return (
+            "네트워크가 느리거나 불안정해 요청이 시간 초과됐습니다.\n"
+            "- 인터넷 연결 상태를 확인한 뒤 잠시 후 다시 실행해 주세요.\n"
+            "- 도면 이미지가 많거나 클수록 업로드가 오래 걸립니다. 가능하면 유선/안정적인 와이파이를 사용하세요.\n"
+            "- 프로그램이 자동으로 여러 번 재시도하도록 설정돼 있으니, 한 번 더 실행하면 성공할 수 있습니다."
+        )
     return None

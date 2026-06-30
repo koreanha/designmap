@@ -183,9 +183,12 @@ JSON으로 응답해주세요:
             return self._rule_only_decision(patent)
         return await self.ai_screen(patent)
 
-    async def screen_batch(self, patents: list[DesignPatent]) -> list[ScreeningResult]:
+    async def screen_batch(self, patents, progress_callback=None) -> list[ScreeningResult]:
         results = []
-        for patent in patents:
+        total = len(patents)
+        for i, patent in enumerate(patents, 1):
             result = await self.screen(patent)
             results.append(result)
+            if progress_callback:
+                progress_callback(i, total, result)
         return results

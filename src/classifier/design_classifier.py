@@ -98,11 +98,12 @@ class DesignClassifier:
                 reasoning="분류 응답 파싱 실패",
             )
 
-    async def classify_batch(
-        self, patents: list[DesignPatent]
-    ) -> list[ClassificationResult]:
+    async def classify_batch(self, patents, progress_callback=None) -> list[ClassificationResult]:
         results = []
-        for patent in patents:
+        total = len(patents)
+        for i, patent in enumerate(patents, 1):
             result = await self.classify(patent)
             results.append(result)
+            if progress_callback:
+                progress_callback(i, total, result)
         return results

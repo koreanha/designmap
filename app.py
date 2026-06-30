@@ -147,11 +147,18 @@ if step.startswith("①"):
         else:
             from src.collectors.pdf_parser import GazetteParser
 
-            with st.spinner("PDF 분석 중... (분량에 따라 시간이 걸립니다)"):
+            progress = st.progress(0.0, text="시작 준비 중...")
+
+            def cb(done, total, patent):
+                pct = done / total if total else 1.0
+                progress.progress(pct, text=f"{done}/{total}개 PDF 처리 ({pct*100:.0f}%)")
+
+            if True:
                 try:
                     parser = GazetteParser(use_vision=not no_vision)
                     patents = parser.parse_directory(
-                        folder, office, default_locarno=locarno_default or None
+                        folder, office, default_locarno=locarno_default or None,
+                        progress_callback=cb,
                     )
                     if patents:
                         parser.to_excel(patents, data_path("parsed_patents.xlsx"))
@@ -205,6 +212,18 @@ elif step.startswith("②"):
             ex = [x.strip() for x in exclude.split(",")] if exclude else None
             use_ai = not no_ai and key_ok
 
+            progress = st.progress(0.0, text="시작 준비 중...")
+            tally = {"pass": 0}
+
+            def cb(done, total, result):
+                if result.passed:
+                    tally["pass"] += 1
+                pct = done / total if total else 1.0
+                progress.progress(
+                    pct,
+                    text=f"{done}/{total}건 처리 ({pct*100:.0f}%) · 통과 {tally['pass']} / 제외 {done - tally['pass']}",
+                )
+
             async def _run():
                 db = Database()
                 await db.init()
@@ -213,21 +232,24 @@ elif step.startswith("②"):
                     return None
                 patents = [row_to_patent(r) for r in rows]
                 screener = DesignScreener(target, kw, ex, use_ai=use_ai)
-                results = await screener.screen_batch(patents)
+                results = await screener.screen_batch(patents, progress_callback=cb)
                 for r in results:
                     await db.save_screening(r)
                 return results
 
-            with st.spinner("스크리닝 중..."):
-                try:
-                    results = run_async(_run())
-                    if results is None:
-                        st.warning("대상 디자인권이 없습니다. ①에서 먼저 PDF를 읽어주세요.")
-                    else:
-                        passed = sum(1 for r in results if r.passed)
-                        st.success(f"완료: 통과 {passed}건 / 제외 {len(results)-passed}건")
-                except Exception as e:
-                    show_ai_error(e)
+            try:
+                if use_ai:
+                    st.info("AI 정밀 스크리닝은 도면을 한 건씩 확인해 다소 느릴 수 있습니다. 아래 막대로 진행률을 확인하세요.")
+                results = run_async(_run())
+                if results is None:
+                    st.warning("대상 디자인권이 없습니다. ①에서 먼저 PDF를 읽어주세요.")
+                else:
+                    passed = sum(1 for r in results if r.passed)
+                    progress.progress(1.0, text=f"완료 · 통과 {passed} / 제외 {len(results)-passed}")
+                    st.success(f"완료: 통과 {passed}건 / 제외 {len(results)-passed}건 (총 {len(results)}건)")
+                    st.bar_chart({"통과": passed, "제외": len(results) - passed})
+            except Exception as e:
+                show_ai_error(e)
 
 
 # ─────────────────────────────── ③ 분류 기준 제안 ───────────────────────────────
@@ -338,6 +360,12 @@ elif step.startswith("⑤"):
         if st.button("분류 시작", type="primary", disabled=not key_ok or crit.status != "approved"):
             from src.classifier.design_classifier import DesignClassifier
 
+            progress = st.progress(0.0, text="시작 준비 중...")
+
+            def cb(done, total, result):
+                pct = done / total if total else 1.0
+                progress.progress(pct, text=f"{done}/{total}건 분류 ({pct*100:.0f}%)")
+
             async def _run():
                 db = Database()
                 await db.init()
@@ -346,12 +374,12 @@ elif step.startswith("⑤"):
                     return None
                 patents = [row_to_patent(r) for r in rows]
                 classifier = DesignClassifier(crit)
-                results = await classifier.classify_batch(patents)
+                results = await classifier.classify_batch(patents, progress_callback=cb)
                 for r in results:
                     await db.save_classification(r)
                 return results
 
-            with st.spinner("AI가 분류 중... (건수에 따라 시간이 걸립니다)"):
+            if True:
                 try:
                     results = run_async(_run())
                     if results is None:

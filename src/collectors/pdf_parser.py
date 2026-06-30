@@ -396,6 +396,7 @@ class GazetteParser:
         drawings_output_dir: str | None = None,
         recursive: bool = True,
         default_locarno: str | None = None,
+        progress_callback=None,
     ) -> list[DesignPatent]:
         """디렉토리 내 모든 PDF를 파싱"""
         dir_path = Path(directory)
@@ -403,10 +404,13 @@ class GazetteParser:
         pdf_files = sorted(dir_path.glob(pattern))
 
         patents = []
-        for pdf in pdf_files:
+        total = len(pdf_files)
+        for i, pdf in enumerate(pdf_files, 1):
             patent = self.parse_pdf(str(pdf), office, drawings_output_dir, default_locarno)
             if patent:
                 patents.append(patent)
+            if progress_callback:
+                progress_callback(i, total, patent)
 
         return patents
 

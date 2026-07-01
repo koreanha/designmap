@@ -451,6 +451,35 @@ elif step.startswith("⑤"):
         c2.metric("이미 분류됨", done_n)
         c3.metric("남은 건수", pending_n)
 
+        # 지금까지 저장된 분류 결과 보기 (비용 없음)
+        if done_n > 0:
+            with st.expander(f"📊 지금까지 저장된 분류 결과 보기 ({done_n}건)", expanded=False):
+                async def _load_done():
+                    db = Database()
+                    await db.init()
+                    return await db.get_all_classifications()
+
+                try:
+                    rows = run_async(_load_done())
+                    cats = Counter(r["primary_category"] for r in rows)
+                    st.bar_chart(dict(cats.most_common()))
+                    st.dataframe(
+                        [
+                            {
+                                "디자인권 ID": r["patent_id"],
+                                "분류": r["primary_category"],
+                                "신뢰도": r["confidence"],
+                                "특징": ", ".join(json.loads(r.get("design_features") or "[]")[:3]),
+                            }
+                            for r in rows
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption("저장 위치: data/classification_results.json · data/designmap.db (DB)")
+                except Exception as e:
+                    st.error(f"결과 조회 실패: {e}")
+
         st.info("💡 AI 분류는 1건당 크레딧이 듭니다. 아래에서 **이번에 처리할 최대 건수**를 정할 수 있고, "
                 "이미 분류된 건은 건너뜁니다(이어서 하기). 중단해도 처리분은 저장됩니다.")
 

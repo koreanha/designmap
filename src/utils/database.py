@@ -135,3 +135,22 @@ class Database:
             else:
                 result = await session.execute(text("SELECT * FROM design_patents"))
             return [dict(row._mapping) for row in result.fetchall()]
+
+    async def get_all_classifications(self) -> list[dict]:
+        """저장된 모든 분류 결과 행을 반환."""
+        async with self.session_factory() as session:
+            result = await session.execute(text("SELECT * FROM classification_results"))
+            return [dict(row._mapping) for row in result.fetchall()]
+
+    async def get_unclassified_screened_patents(self) -> list[dict]:
+        """스크리닝을 통과했지만 아직 분류되지 않은 디자인권 (분류 이어하기용)."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                text(
+                    "SELECT p.* FROM design_patents p "
+                    "JOIN screening_results s ON p.id = s.patent_id "
+                    "LEFT JOIN classification_results c ON p.id = c.patent_id "
+                    "WHERE s.passed = 1 AND c.patent_id IS NULL"
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]

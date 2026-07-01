@@ -108,6 +108,16 @@ try:
 except Exception as e:
     st.sidebar.error(f"DB 상태 조회 실패: {e}")
 
+st.sidebar.divider()
+if st.sidebar.button("💾 데이터 백업"):
+    from src.utils.paths import backup_data
+
+    try:
+        dest = backup_data()
+        st.sidebar.success(f"백업 완료:\n{dest}")
+    except Exception as e:
+        st.sidebar.error(f"백업 실패: {e}")
+
 step = st.sidebar.radio(
     "단계 선택",
     [
@@ -360,56 +370,96 @@ elif step.startswith("⑤"):
         crit = ClassificationCriteria(**json.loads(Path(CRITERIA_FILE).read_text(encoding="utf-8")))
         if crit.status != "approved":
             st.warning(f"기준 상태가 '{crit.status}' 입니다. ④에서 먼저 '승인'하세요.")
-        st.write("승인된 기준으로 각 디자인권을 분류합니다.")
-        if st.button("분류 시작", type="primary", disabled=not key_ok or crit.status != "approved"):
+
+        # 현재 분류 현황 집계
+        async def _counts():
+            db = Database()
+            await db.init()
+            passed = await db.get_screened_patents(passed_only=True)
+            pending = await db.get_unclassified_screened_patents()
+            return len(passed), len(pending)
+
+        try:
+            passed_n, pending_n = run_async(_counts())
+        except Exception:
+            passed_n, pending_n = 0, 0
+        done_n = passed_n - pending_n
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("분류 대상(통과)", passed_n)
+        c2.metric("이미 분류됨", done_n)
+        c3.metric("남은 건수", pending_n)
+
+        st.info("💡 AI 분류는 1건당 크레딧이 듭니다. 아래에서 **이번에 처리할 최대 건수**를 정할 수 있고, "
+                "이미 분류된 건은 건너뜁니다(이어서 하기). 중단해도 처리분은 저장됩니다.")
+
+        resume = st.checkbox("이미 분류된 건은 건너뛰기 (이어서 하기)", value=True)
+        target_pool = pending_n if resume else passed_n
+        max_n = st.number_input(
+            "이번에 분류할 최대 건수 (비용 조절용)",
+            min_value=1, max_value=max(target_pool, 1),
+            value=max(min(target_pool, 20), 1),
+            help="처음에는 적게(예: 10~20) 돌려보고 결과를 확인한 뒤 늘리는 것을 권장합니다.",
+        )
+
+        if st.button("분류 시작", type="primary", disabled=not key_ok or crit.status != "approved" or target_pool == 0):
             from src.classifier.design_classifier import DesignClassifier
 
             progress = st.progress(0.0, text="시작 준비 중...")
 
             def cb(done, total, result):
                 pct = done / total if total else 1.0
-                progress.progress(pct, text=f"{done}/{total}건 분류 ({pct*100:.0f}%)")
+                progress.progress(pct, text=f"{done}/{total}건 분류 ({pct*100:.0f}%) · 방금: {result.primary_category}")
 
             async def _run():
                 db = Database()
                 await db.init()
-                rows = await db.get_screened_patents(passed_only=True)
+                rows = (await db.get_unclassified_screened_patents()) if resume \
+                    else (await db.get_screened_patents(passed_only=True))
                 if not rows:
-                    return None
-                patents = [row_to_patent(r) for r in rows]
+                    return None, []
+                patents = [row_to_patent(r) for r in rows][: int(max_n)]
                 classifier = DesignClassifier(crit)
-                results = []
                 total = len(patents)
                 for i, p in enumerate(patents, 1):
                     r = await classifier.classify(p)
                     await db.save_classification(r)  # 건별 즉시 저장 (중단돼도 유지)
-                    results.append(r)
                     cb(i, total, r)
-                return results
+                all_rows = await db.get_all_classifications()
+                return "ok", all_rows
 
-            if True:
-                try:
-                    results = run_async(_run())
-                    if results is None:
-                        st.warning("스크리닝 통과 디자인권이 없습니다. ②를 먼저 진행하세요.")
-                    else:
-                        Path(RESULTS_FILE).write_text(
-                            json.dumps([r.model_dump() for r in results], ensure_ascii=False, indent=2),
-                            encoding="utf-8",
-                        )
-                        cats = Counter(r.primary_category for r in results)
-                        st.success(f"{len(results)}건 분류 완료")
-                        st.bar_chart(dict(cats.most_common()))
-                        st.dataframe(
-                            [
-                                {"분류": r.primary_category, "신뢰도": r.confidence,
-                                 "특징": ", ".join(r.design_features[:3])}
-                                for r in results
-                            ],
-                            use_container_width=True,
-                        )
-                except Exception as e:
-                    show_ai_error(e)
+            try:
+                status, all_rows = run_async(_run())
+                if status is None:
+                    st.warning("분류할 디자인권이 없습니다. (이미 모두 분류됐거나 ②를 먼저 진행하세요)")
+                else:
+                    # DB의 전체 분류 결과를 결과 파일로 내보내기
+                    results = [ClassificationResult(
+                        patent_id=r["patent_id"],
+                        primary_category=r["primary_category"],
+                        secondary_categories=json.loads(r.get("secondary_categories") or "[]"),
+                        confidence=r["confidence"],
+                        reasoning=r.get("reasoning") or "",
+                        design_features=json.loads(r.get("design_features") or "[]"),
+                        trend_tags=json.loads(r.get("trend_tags") or "[]"),
+                    ) for r in all_rows]
+                    Path(RESULTS_FILE).write_text(
+                        json.dumps([r.model_dump() for r in results], ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    cats = Counter(r.primary_category for r in results)
+                    st.success(f"완료! 지금까지 총 {len(results)}건 분류됨 (data/classification_results.json 저장)")
+                    st.bar_chart(dict(cats.most_common()))
+                    st.dataframe(
+                        [
+                            {"분류": r.primary_category, "신뢰도": r.confidence,
+                             "특징": ", ".join(r.design_features[:3])}
+                            for r in results
+                        ],
+                        use_container_width=True,
+                    )
+            except Exception as e:
+                show_ai_error(e)
 
 
 # ─────────────────────────────── ⑥ 리포트 ───────────────────────────────

@@ -30,3 +30,25 @@ def default_db_url() -> str:
     """SQLite 절대 경로 URL. data 디렉토리를 보장한다."""
     ensure_data_dir()
     return f"sqlite+aiosqlite:///{DATA_DIR / 'designmap.db'}"
+
+
+def backup_data() -> str:
+    """DB와 결과 파일을 data/backups/<시각>/ 로 복사. 백업 폴더 경로 반환."""
+    import shutil
+    from datetime import datetime
+
+    ensure_data_dir()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = DATA_DIR / "backups" / stamp
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in [
+        "designmap.db",
+        "proposed_criteria.json",
+        "classification_results.json",
+        "parsed_patents.xlsx",
+        "trend_report.md",
+    ]:
+        src = DATA_DIR / name
+        if src.exists():
+            shutil.copy2(src, dest / name)
+    return str(dest)

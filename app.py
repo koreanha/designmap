@@ -88,6 +88,68 @@ async def _db_counts() -> dict:
     return {"total": total, "screened": screened, "passed": passed, "classified": classified}
 
 
+STATUS_LABELS = {
+    "proposed": ("🟡", "제안됨 — 검토가 필요합니다"),
+    "reviewed": ("🟠", "검토 중"),
+    "approved": ("🟢", "승인됨 — 분류 실행 준비 완료"),
+    "rejected": ("🔴", "반려됨"),
+}
+PEST_LABELS = {"political": "정치", "economic": "경제", "social": "사회", "technological": "기술"}
+
+
+def render_status_banner(status: str):
+    icon, label = STATUS_LABELS.get(status, ("⚪", status))
+    msg = f"{icon} 현재 상태: **{label}**"
+    (st.success if status == "approved" else st.warning)(msg)
+
+
+def render_criteria(crit):
+    """분류 기준을 사람이 읽기 좋게 표시 (JSON 대신 표·태그)."""
+    st.markdown(f"### 📋 {crit.name}")
+    if crit.description:
+        st.caption(crit.description)
+    if getattr(crit, "revision_notes", None):
+        st.markdown(f"> ✏️ **최근 수정 요청:** {crit.revision_notes}")
+
+    st.markdown("#### 🧩 분류 차원 — 디자인을 나누는 기준 축")
+    if crit.dimensions:
+        st.dataframe(
+            [
+                {
+                    "차원": d.name,
+                    "설명": d.description,
+                    "분류 값": " · ".join(d.values),
+                    "가중치": d.weight,
+                }
+                for d in crit.dimensions
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("아직 분류 차원이 없습니다.")
+
+    if crit.trend_keywords:
+        st.markdown("#### 🏷️ 트렌드 키워드")
+        st.markdown("  ".join(f"`{k}`" for k in crit.trend_keywords))
+
+    if crit.pest_factors:
+        st.markdown("#### 🌐 PEST 분석 — 트렌드에 영향을 주는 외부 요인")
+        st.dataframe(
+            [
+                {
+                    "구분": PEST_LABELS.get(f.category.value, f.category.value),
+                    "요인": f.factor,
+                    "영향도": f.impact_level,
+                    "관련성": f.relevance,
+                }
+                for f in crit.pest_factors
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption("디자인권 분류 · 트렌드 예측")
@@ -307,7 +369,8 @@ elif step.startswith("③"):
                             encoding="utf-8",
                         )
                         st.success("제안 완료 → data/proposed_criteria.json 저장됨")
-                        st.text(proposer.format_criteria_for_review(crit))
+                        render_criteria(crit)
+                        st.info("👉 다음: 왼쪽 메뉴 **④ 기준 수정/승인** 에서 검토·수정 후 승인하세요.")
                 except Exception as e:
                     show_ai_error(e)
 
@@ -319,12 +382,11 @@ elif step.startswith("④"):
         st.warning("아직 제안된 기준이 없습니다. ③을 먼저 진행하세요.")
     else:
         crit = ClassificationCriteria(**json.loads(Path(CRITERIA_FILE).read_text(encoding="utf-8")))
-        st.markdown(f"**현재 상태:** `{crit.status}`")
-
         from src.classifier.criteria_proposer import CriteriaProposer
 
-        st.text(CriteriaProposer().format_criteria_for_review(crit) if False else "")
-        with st.expander("현재 분류 기준 보기", expanded=True):
+        render_status_banner(crit.status)
+        render_criteria(crit)
+        with st.expander("원본 데이터(JSON) 보기 — 고급"):
             st.json(crit.model_dump())
 
         st.subheader("AI에게 수정 요청")
@@ -345,8 +407,7 @@ elif step.startswith("④"):
                             json.dumps(revised.model_dump(), ensure_ascii=False, indent=2),
                             encoding="utf-8",
                         )
-                        st.success("수정 완료 (저장됨)")
-                        st.text(proposer.format_criteria_for_review(revised))
+                        st.success("수정 완료 (저장됨). 아래에 반영된 내용을 확인하세요.")
                         st.rerun()
                     except Exception as e:
                         show_ai_error(e)

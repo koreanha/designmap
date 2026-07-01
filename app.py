@@ -232,9 +232,13 @@ elif step.startswith("②"):
                     return None
                 patents = [row_to_patent(r) for r in rows]
                 screener = DesignScreener(target, kw, ex, use_ai=use_ai)
-                results = await screener.screen_batch(patents, progress_callback=cb)
-                for r in results:
-                    await db.save_screening(r)
+                results = []
+                total = len(patents)
+                for i, p in enumerate(patents, 1):
+                    r = await screener.screen(p)
+                    await db.save_screening(r)  # 건별 즉시 저장 (중단돼도 유지)
+                    results.append(r)
+                    cb(i, total, r)
                 return results
 
             try:
@@ -374,9 +378,13 @@ elif step.startswith("⑤"):
                     return None
                 patents = [row_to_patent(r) for r in rows]
                 classifier = DesignClassifier(crit)
-                results = await classifier.classify_batch(patents, progress_callback=cb)
-                for r in results:
-                    await db.save_classification(r)
+                results = []
+                total = len(patents)
+                for i, p in enumerate(patents, 1):
+                    r = await classifier.classify(p)
+                    await db.save_classification(r)  # 건별 즉시 저장 (중단돼도 유지)
+                    results.append(r)
+                    cb(i, total, r)
                 return results
 
             if True:

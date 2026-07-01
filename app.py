@@ -97,6 +97,18 @@ STATUS_LABELS = {
 PEST_LABELS = {"political": "정치", "economic": "경제", "social": "사회", "technological": "기술"}
 
 
+def to_excel_bytes(rows: list[dict]) -> bytes:
+    """dict 목록을 Excel 파일 바이트로 변환 (다운로드용)."""
+    import io
+
+    import pandas as pd
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="분류결과")
+    return buf.getvalue()
+
+
 def render_status_banner(status: str):
     icon, label = STATUS_LABELS.get(status, ("⚪", status))
     msg = f"{icon} 현재 상태: **{label}**"
@@ -189,6 +201,7 @@ step = st.sidebar.radio(
         "④ 기준 수정/승인",
         "⑤ 분류 실행",
         "⑥ 트렌드 리포트",
+        "⑦ 결과 보기 / 내려받기",
     ],
 )
 
@@ -585,3 +598,81 @@ elif step.startswith("⑥"):
                                        file_name="trend_report.md")
                 except Exception as e:
                     show_ai_error(e)
+
+
+# ─────────────────────────────── ⑦ 결과 보기 / 내려받기 ───────────────────────────────
+elif step.startswith("⑦"):
+    st.header("⑦ 분류 결과 보기 / 내려받기")
+    st.write("지금까지 저장된 분류 결과를 확인하고 Excel 등으로 내려받습니다. (AI 호출 없음, 무료)")
+
+    async def _load_joined():
+        db = Database()
+        await db.init()
+        return await db.get_classified_joined()
+
+    try:
+        rows = run_async(_load_joined())
+    except Exception as e:
+        st.error(f"결과 조회 실패: {e}")
+        rows = []
+
+    if not rows:
+        st.warning("아직 저장된 분류 결과가 없습니다. ⑤ 분류를 먼저 실행하세요.")
+    else:
+        # 표에 보기 좋게 가공
+        office_ko = {
+            "KIPO": "한국", "USPTO": "미국", "EUIPO": "유럽",
+            "CNIPA": "중국", "JPO": "일본", "WIPO": "WIPO", "OTHER": "기타",
+        }
+        table_rows = []
+        for r in rows:
+            table_rows.append({
+                "출원번호": r.get("application_number", ""),
+                "물품명": r.get("title", ""),
+                "출원청": office_ko.get(r.get("patent_office", ""), r.get("patent_office", "")),
+                "로카르노": r.get("locarno_class", ""),
+                "출원인": r.get("applicant", "") or "",
+                "주분류": r.get("primary_category", ""),
+                "신뢰도": r.get("confidence", ""),
+                "디자인특징": ", ".join(json.loads(r.get("design_features") or "[]")),
+                "트렌드태그": ", ".join(json.loads(r.get("trend_tags") or "[]")),
+                "분류근거": r.get("reasoning", "") or "",
+            })
+
+        cats = Counter(r["primary_category"] for r in rows)
+        c1, c2 = st.columns([1, 2])
+        c1.metric("총 분류 건수", len(rows))
+        c1.metric("분류 카테고리 수", len(cats))
+        c2.markdown("**분류 분포**")
+        c2.bar_chart(dict(cats.most_common()))
+
+        st.markdown("#### 분류 결과 표")
+        st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+        st.markdown("#### 내려받기")
+        d1, d2, d3 = st.columns(3)
+        try:
+            xlsx = to_excel_bytes(table_rows)
+            d1.download_button(
+                "⬇️ Excel (.xlsx)", xlsx,
+                file_name="classification_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except Exception as e:
+            d1.error(f"Excel 생성 실패: {e}")
+
+        import io as _io
+
+        import pandas as _pd
+
+        csv_bytes = _pd.DataFrame(table_rows).to_csv(index=False).encode("utf-8-sig")
+        d2.download_button("⬇️ CSV (.csv)", csv_bytes, file_name="classification_results.csv", mime="text/csv")
+
+        json_bytes = json.dumps(table_rows, ensure_ascii=False, indent=2).encode("utf-8")
+        d3.download_button("⬇️ JSON (.json)", json_bytes, file_name="classification_results.json",
+                           mime="application/json")
+
+        if Path(REPORT_FILE).exists():
+            st.markdown("#### 트렌드 리포트")
+            st.download_button("⬇️ 트렌드 리포트 (.md)", Path(REPORT_FILE).read_text(encoding="utf-8"),
+                               file_name="trend_report.md")

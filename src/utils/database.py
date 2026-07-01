@@ -142,6 +142,21 @@ class Database:
             result = await session.execute(text("SELECT * FROM classification_results"))
             return [dict(row._mapping) for row in result.fetchall()]
 
+    async def get_classified_joined(self) -> list[dict]:
+        """분류 결과를 디자인권 서지정보와 결합해 반환 (결과 보기/엑셀용)."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                text(
+                    "SELECT p.application_number, p.registration_number, p.patent_office, "
+                    "p.title, p.locarno_class, p.applicant, p.filing_date, "
+                    "c.primary_category, c.secondary_categories, c.confidence, "
+                    "c.reasoning, c.design_features, c.trend_tags "
+                    "FROM classification_results c "
+                    "JOIN design_patents p ON p.id = c.patent_id"
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+
     async def get_unclassified_screened_patents(self) -> list[dict]:
         """스크리닝을 통과했지만 아직 분류되지 않은 디자인권 (분류 이어하기용)."""
         async with self.session_factory() as session:

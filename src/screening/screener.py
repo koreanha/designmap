@@ -39,7 +39,8 @@ class DesignScreener:
         """규칙 기반 빠른 스크리닝 (API 호출 없이)"""
         matched = []
 
-        locarno_match = any(
+        # target_locarno가 비어 있으면 로카르노 필터를 적용하지 않는다(전체 대상).
+        locarno_match = (not self.target_locarno) or any(
             patent.locarno_class.startswith(lc) for lc in self.target_locarno
         )
         if not locarno_match:

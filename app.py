@@ -97,6 +97,37 @@ STATUS_LABELS = {
 PEST_LABELS = {"political": "정치", "economic": "경제", "social": "사회", "technological": "기술"}
 
 
+def pick_directory() -> str | None:
+    """네이티브 폴더 선택 대화상자를 띄워 선택한 폴더 경로를 반환.
+
+    로컬 실행 전용. tkinter를 별도 프로세스(메인 스레드)에서 실행해
+    macOS에서 스레드 충돌 없이 폴더 선택창을 띄운다.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import tkinter as tk\n"
+        "from tkinter import filedialog\n"
+        "r = tk.Tk(); r.withdraw()\n"
+        "try:\n"
+        "    r.attributes('-topmost', True)\n"
+        "except Exception:\n"
+        "    pass\n"
+        "p = filedialog.askdirectory(title='PDF 폴더 선택')\n"
+        "print(p or '')\n"
+    )
+    try:
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, timeout=180,
+        )
+        path = (out.stdout or "").strip()
+        return path or None
+    except Exception:
+        return None
+
+
 def to_excel_bytes(rows: list[dict]) -> bytes:
     """dict 목록을 Excel 파일 바이트로 변환 (다운로드용)."""
     import io
@@ -219,11 +250,18 @@ if step.startswith("①"):
     st.header("① PDF 원문공보 읽기")
     st.write("저장해 둔 디자인 공보 PDF 폴더에서 서지정보와 도면을 추출합니다.")
 
-    folder = st.text_input("PDF가 있는 폴더 경로", placeholder="/Users/내이름/designmap-pdf/korea")
-    col1, col2 = st.columns(2)
-    office = col1.selectbox("발행 특허청", ["KIPO", "USPTO", "EUIPO", "CNIPA", "JPO"])
-    locarno_default = col2.text_input("로카르노 기본값 (선택)", placeholder="예: 25",
-                                      help="PDF에서 분류를 못 찾을 때 사용할 값")
+    if st.button("📁 폴더 찾아보기"):
+        picked = pick_directory()
+        if picked:
+            st.session_state["pdf_folder"] = picked
+        else:
+            st.info("폴더를 선택하지 않았습니다. 경로를 직접 입력해도 됩니다.")
+
+    folder = st.text_input(
+        "PDF가 있는 폴더 경로", key="pdf_folder",
+        placeholder="위 '폴더 찾아보기'로 선택하거나 경로를 직접 입력",
+    )
+    office = st.selectbox("발행 특허청", ["KIPO", "USPTO", "EUIPO", "CNIPA", "JPO"])
     no_vision = st.checkbox("AI Vision OCR 끄기 (텍스트 추출만, 빠름/무료)", value=False)
 
     if st.button("PDF 읽기 시작", type="primary"):
@@ -242,8 +280,7 @@ if step.startswith("①"):
                 try:
                     parser = GazetteParser(use_vision=not no_vision)
                     patents = parser.parse_directory(
-                        folder, office, default_locarno=locarno_default or None,
-                        progress_callback=cb,
+                        folder, office, progress_callback=cb,
                     )
                     if patents:
                         parser.to_excel(patents, data_path("parsed_patents.xlsx"))
@@ -281,18 +318,15 @@ elif step.startswith("②"):
     st.header("② 1차 스크리닝")
     st.write("분석 대상과 관계없는 디자인을 걸러 노이즈를 줄입니다.")
 
-    locarno = st.text_input("대상 로카르노 분류", placeholder="예: 25 (콤마로 여러 개)")
+    st.caption("불러온 전체 디자인권을 대상으로 합니다. (로카르노는 사전 정리 전제)")
     keywords = st.text_input("포함 키워드 (콤마 구분, 선택)")
     exclude = st.text_input("제외 키워드 (콤마 구분, 선택)")
     no_ai = st.checkbox("AI 없이 규칙 기반만 (열쇠/비용 불필요, 빠름)", value=not key_ok)
 
     if st.button("스크리닝 시작", type="primary"):
-        if not locarno:
-            st.error("대상 로카르노 분류를 입력하세요.")
-        else:
+        if True:
             from src.screening.screener import DesignScreener
 
-            target = [x.strip() for x in locarno.split(",")]
             kw = [x.strip() for x in keywords.split(",")] if keywords else None
             ex = [x.strip() for x in exclude.split(",")] if exclude else None
             use_ai = not no_ai and key_ok
@@ -312,11 +346,11 @@ elif step.startswith("②"):
             async def _run():
                 db = Database()
                 await db.init()
-                rows = await db.get_patents_by_locarno(target[0])
+                rows = await db.get_all_patents()
                 if not rows:
                     return None
                 patents = [row_to_patent(r) for r in rows]
-                screener = DesignScreener(target, kw, ex, use_ai=use_ai)
+                screener = DesignScreener([], kw, ex, use_ai=use_ai)
                 results = []
                 total = len(patents)
                 for i, p in enumerate(patents, 1):
@@ -346,13 +380,11 @@ elif step.startswith("③"):
     st.header("③ 분류 기준 제안 (AI)")
     st.write("도면과 PEST 분석을 바탕으로 AI가 분류 기준을 제안합니다.")
 
-    locarno = st.text_input("대상 로카르노 분류", placeholder="예: 25")
-    context = st.text_area("분석 목적 / 컨텍스트", placeholder="예: 건축구성요소(25류) 외관 디자인 트렌드 분석")
+    st.caption("스크리닝을 통과한 디자인권을 대상으로 분석합니다.")
+    context = st.text_area("분석 목적 / 컨텍스트", placeholder="예: 건축구성요소 외관 디자인 트렌드 분석")
 
     if st.button("분류 기준 제안 받기", type="primary", disabled=not key_ok):
-        if not locarno:
-            st.error("대상 로카르노 분류를 입력하세요.")
-        else:
+        if True:
             from src.classifier.criteria_proposer import CriteriaProposer
 
             async def _run():
@@ -360,14 +392,14 @@ elif step.startswith("③"):
                 await db.init()
                 rows = await db.get_screened_patents(passed_only=True)
                 if not rows:
-                    rows = await db.get_patents_by_locarno(locarno.split(",")[0].strip())
+                    rows = await db.get_all_patents()
                 if not rows:
                     return None
                 patents = [row_to_patent(r) for r in rows]
+                # 데이터에 존재하는 로카르노 분류를 자동으로 범위로 사용
+                scope = sorted({p.locarno_class for p in patents if p.locarno_class})
                 proposer = CriteriaProposer()
-                crit = await proposer.propose_criteria(
-                    patents, [x.strip() for x in locarno.split(",")], context or None
-                )
+                crit = await proposer.propose_criteria(patents, scope, context or None)
                 return proposer, crit
 
             with st.spinner("AI가 분류 기준 제안 중... (네트워크에 따라 1~2분)"):

@@ -126,6 +126,12 @@ class Database:
             )
             return [dict(row._mapping) for row in result.fetchall()]
 
+    async def get_all_patents(self) -> list[dict]:
+        """저장된 모든 디자인권을 반환 (로카르노 필터 없이)."""
+        async with self.session_factory() as session:
+            result = await session.execute(text("SELECT * FROM design_patents"))
+            return [dict(row._mapping) for row in result.fetchall()]
+
     async def get_screened_patents(self, passed_only: bool = True) -> list[dict]:
         async with self.session_factory() as session:
             if passed_only:

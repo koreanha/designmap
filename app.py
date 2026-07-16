@@ -128,6 +128,87 @@ def pick_directory() -> str | None:
         return None
 
 
+def markdown_to_docx_bytes(md_text: str) -> bytes:
+    """마크다운 리포트를 편집 가능한 Word(.docx) 바이트로 변환."""
+    import io
+    import re
+
+    from docx import Document
+
+    doc = Document()
+
+    def add_runs(paragraph, text: str):
+        for part in re.split(r"(\*\*.+?\*\*)", text):
+            if part.startswith("**") and part.endswith("**"):
+                paragraph.add_run(part[2:-2]).bold = True
+            elif part:
+                paragraph.add_run(part)
+
+    lines = md_text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        # 표: |...| 다음 줄이 |---| 형태
+        if line.startswith("|") and i + 1 < len(lines) and re.match(r"^\|?[\s:\-\|]+\|?$", lines[i + 1].strip()) and "-" in lines[i + 1]:
+            header = [c.strip() for c in line.strip().strip("|").split("|")]
+            i += 2
+            body = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                body.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+                i += 1
+            table = doc.add_table(rows=1, cols=len(header))
+            try:
+                table.style = "Table Grid"
+            except Exception:
+                pass
+            for j, h in enumerate(header):
+                add_runs(table.rows[0].cells[j].paragraphs[0], h)
+            for r in body:
+                cells = table.add_row().cells
+                for j, c in enumerate(r):
+                    if j < len(cells):
+                        add_runs(cells[j].paragraphs[0], c)
+            doc.add_paragraph("")
+            continue
+        if not line:
+            i += 1
+            continue
+        m = re.match(r"^(#{1,4})\s+(.*)$", line)
+        if m:
+            doc.add_heading(m.group(2), level=len(m.group(1)))
+        elif re.match(r"^[-*]\s+", line):
+            add_runs(doc.add_paragraph(style="List Bullet"), re.sub(r"^[-*]\s+", "", line))
+        elif re.match(r"^\d+\.\s+", line):
+            add_runs(doc.add_paragraph(style="List Number"), re.sub(r"^\d+\.\s+", "", line))
+        elif re.match(r"^-{3,}$", line):
+            pass
+        else:
+            add_runs(doc.add_paragraph(), line)
+        i += 1
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def offer_report_downloads(md_text: str, key_prefix: str = ""):
+    """리포트를 Markdown/Word로 내려받는 버튼."""
+    st.download_button("⬇️ 리포트 (Markdown .md)", md_text,
+                       file_name="trend_report.md", key=f"{key_prefix}md")
+    try:
+        docx_bytes = markdown_to_docx_bytes(md_text)
+        st.download_button(
+            "⬇️ 리포트 (Word .docx)", docx_bytes,
+            file_name="trend_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key=f"{key_prefix}docx",
+        )
+    except ImportError:
+        st.caption("Word(.docx) 다운로드에는 python-docx가 필요합니다. 코드 업데이트 후 다시 실행하세요.")
+    except Exception as e:
+        st.caption(f"Word 변환 오류: {e}")
+
+
 def to_excel_bytes(rows: list[dict]) -> bytes:
     """dict 목록을 Excel 파일 바이트로 변환 (다운로드용)."""
     import io
@@ -249,6 +330,24 @@ def show_ai_error(e: Exception):
 if step.startswith("①"):
     st.header("① PDF 원문공보 읽기")
     st.write("저장해 둔 디자인 공보 PDF 폴더에서 서지정보와 도면을 추출합니다.")
+
+    with st.expander("🗑️ 새로 시작하기 — 기존 데이터 초기화"):
+        st.warning("아래를 실행하면 지금까지의 **모든 데이터(수집·스크리닝·분류·리포트)가 삭제**되고 처음부터 다시 시작합니다. "
+                   "삭제 직전 자동으로 백업(data/backups/)이 만들어집니다.")
+        confirm = st.checkbox("네, 모든 데이터를 삭제하고 초기화합니다.")
+        if st.button("🗑️ 초기화 실행", disabled=not confirm):
+            from src.utils.paths import reset_data
+
+            try:
+                backup_dir = reset_data(backup=True)
+                for k in ["pdf_folder"]:
+                    st.session_state.pop(k, None)
+                st.success(f"초기화 완료. (백업: {backup_dir})")
+                st.rerun()
+            except Exception as e:
+                st.error(f"초기화 실패: {e}")
+
+    st.divider()
 
     if st.button("📁 폴더 찾아보기"):
         picked = pick_directory()
@@ -626,8 +725,7 @@ elif step.startswith("⑥"):
                     Path(REPORT_FILE).write_text(report_text, encoding="utf-8")
                     st.success("리포트 생성 완료 → data/trend_report.md")
                     st.markdown(report_text)
-                    st.download_button("리포트 내려받기 (.md)", report_text,
-                                       file_name="trend_report.md")
+                    offer_report_downloads(report_text, key_prefix="rep6_")
                 except Exception as e:
                     show_ai_error(e)
 
@@ -706,5 +804,4 @@ elif step.startswith("⑦"):
 
         if Path(REPORT_FILE).exists():
             st.markdown("#### 트렌드 리포트")
-            st.download_button("⬇️ 트렌드 리포트 (.md)", Path(REPORT_FILE).read_text(encoding="utf-8"),
-                               file_name="trend_report.md")
+            offer_report_downloads(Path(REPORT_FILE).read_text(encoding="utf-8"), key_prefix="rep7_")

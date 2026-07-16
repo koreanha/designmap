@@ -11,7 +11,7 @@ git pull
 
 echo ""
 echo "[2/2] 업데이트 적용 중..."
-pip3 install -e . >/dev/null 2>&1 || python3 -m pip install -e . >/dev/null 2>&1
+pip3 install -e ".[web]" >/dev/null 2>&1 || python3 -m pip install -e . >/dev/null 2>&1
 
 echo ""
 echo "✅ 완료! 데이터(data 폴더)는 그대로 유지됩니다."

@@ -32,6 +32,34 @@ def default_db_url() -> str:
     return f"sqlite+aiosqlite:///{DATA_DIR / 'designmap.db'}"
 
 
+_DATA_FILES = [
+    "designmap.db",
+    "proposed_criteria.json",
+    "classification_results.json",
+    "parsed_patents.xlsx",
+    "trend_report.md",
+]
+
+
+def reset_data(backup: bool = True) -> str | None:
+    """모든 작업 데이터(DB·결과 파일·도면)를 삭제하고 초기화. 삭제 전 백업(기본)."""
+    import shutil
+
+    ensure_data_dir()
+    backup_dir = backup_data() if backup else None
+    for name in _DATA_FILES:
+        f = DATA_DIR / name
+        if f.exists():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    drawings = DATA_DIR / "drawings"
+    if drawings.exists():
+        shutil.rmtree(drawings, ignore_errors=True)
+    return backup_dir
+
+
 def backup_data() -> str:
     """DB와 결과 파일을 data/backups/<시각>/ 로 복사. 백업 폴더 경로 반환."""
     import shutil

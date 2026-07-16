@@ -224,8 +224,10 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             re.compile(r"Registration\s*date[:\s]*([\d./-]+)", re.MULTILINE | re.IGNORECASE),
         ],
         "locarno_class": [
-            re.compile(r"Locarno[:\s]*([\d.-]+)", re.MULTILINE | re.IGNORECASE),
-            re.compile(r"Class[:\s]*([\d-]+)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"Locarno[^\d]{0,25}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"\(51\)[^\d]{0,25}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE),
+            re.compile(r"\bClass(?:ification)?[^\d]{0,10}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"\bCl\.?[^\d]{0,6}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
         ],
         "local_class_codes": [],
         "design_description": [
@@ -568,8 +570,8 @@ def _normalize_locarno(value: str | None) -> str | None:
         return None
     value = str(value).strip()
 
-    # 'XX-XX' 또는 'XX-X' 형태 추출
-    m = re.search(r"(\d{1,2})\s*[-–]\s*(\d{1,2})", value)
+    # 'XX-XX' / 'XX-X' / 'XX.XX' (대시·en대시·점 구분) 형태 추출
+    m = re.search(r"(\d{1,2})\s*[-–.]\s*(\d{1,2})", value)
     if m:
         return f"{int(m.group(1)):02d}-{int(m.group(2)):02d}"
 

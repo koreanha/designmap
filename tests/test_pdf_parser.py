@@ -32,6 +32,25 @@ def test_kipo_locarno_pattern_variants():
             _normalize_locarno(result.get("locarno_class")) == "25-03", f"실패: {text}"
 
 
+def test_euipo_locarno_inid_variants():
+    parser = GazetteParser(use_vision=False)
+    for text in [
+        "(51) 12-05",
+        "(51) 12 - 05",
+        "(51)  12.05",
+        "Locarno Classification: 12-05",
+        "Locarno Cl. 12-05",
+        "Class 12-05",
+    ]:
+        result = parser._regex_extract(text, "EUIPO")
+        assert _normalize_locarno(result.get("locarno_class")) == "12-05", f"실패: {text}"
+
+
+def test_normalize_locarno_dot():
+    assert _normalize_locarno("12.05") == "12-05"
+    assert _normalize_locarno("(51) 12.05") == "12-05"
+
+
 def test_parse_date_iso():
     assert _parse_date_flexible("2024-01-15") == date(2024, 1, 15)
 

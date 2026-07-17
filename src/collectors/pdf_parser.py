@@ -198,34 +198,45 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
         ],
     },
     "EUIPO": {
+        # 주의: EUIPO/국제공보는 INID 코드(11, 21, 51, 54, 73...)를 괄호 없이
+        # 줄 맨 앞에 표기하는 경우가 많다 (예: "51  12 - 05").
         "application_number": [
             re.compile(r"Application\s*(?:No|Number)[.:\s]*([\d\s]+\d)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?21\)?[ \t]+([\d][\d ./-]{4,}\d)[ \t]*$", re.MULTILINE),
         ],
         "registration_number": [
             re.compile(r"Registration\s*(?:No|Number)[.:\s]*([\d\s-]+\d)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"RCD\s*(?:No|Number)?[.:\s]*([\d-]+)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?11\)?[ \t]+([\d][\d ./-]{4,}\d)[ \t]*$", re.MULTILINE),
         ],
         "title": [
             re.compile(r"Product\s*(?:Indication)?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Indication\s*of\s*(?:the\s*)?product[s]?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?54\)?\s+(.+?)\s*$", re.MULTILINE),
         ],
         "applicant": [
             re.compile(r"Holder[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Applicant[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?73\)?\s+(.+?)\s*$", re.MULTILINE),
         ],
         "designer": [
             re.compile(r"Designer[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?72\)?\s+(.+?)\s*$", re.MULTILINE),
         ],
         "filing_date": [
             re.compile(r"Filing\s*date[:\s]*([\d./-]+)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Date\s*of\s*filing[:\s]*([\d./-]+)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?22\)?[ \t]+([\d./-]{8,})[ \t]*$", re.MULTILINE),
         ],
         "registration_date": [
             re.compile(r"Registration\s*date[:\s]*([\d./-]+)", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"^\s*\(?15\)?[ \t]+([\d./-]{8,})[ \t]*$", re.MULTILINE),
         ],
         "locarno_class": [
             re.compile(r"Locarno[^\d]{0,25}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
             re.compile(r"\(51\)[^\d]{0,25}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE),
+            # INID 51이 줄 맨 앞에 괄호 없이 오고, 같은 줄 또는 다음 줄에 분류가 오는 형식
+            re.compile(r"^\s*51\s*\n?\s*(\d{1,2}\s*[-–.]\s*\d{1,2})", re.MULTILINE),
             re.compile(r"\bClass(?:ification)?[^\d]{0,10}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
             re.compile(r"\bCl\.?[^\d]{0,6}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
         ],
@@ -623,5 +634,13 @@ def _parse_date_flexible(date_str: str | None) -> date | None:
                 return date(int(us_match.group(3)), month, int(us_match.group(2)))
             except ValueError:
                 pass
+
+    # 유럽식 DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY
+    eu_match = re.match(r"(\d{1,2})[./-](\d{1,2})[./-](\d{4})", date_str)
+    if eu_match:
+        try:
+            return date(int(eu_match.group(3)), int(eu_match.group(2)), int(eu_match.group(1)))
+        except ValueError:
+            pass
 
     return None

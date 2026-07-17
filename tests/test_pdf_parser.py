@@ -51,6 +51,39 @@ def test_normalize_locarno_dot():
     assert _normalize_locarno("(51) 12.05") == "12-05"
 
 
+def test_euipo_inid_bare_codes():
+    """국제공보식: INID 코드가 괄호 없이 줄 앞에 오는 형식."""
+    parser = GazetteParser(use_vision=False)
+    text = (
+        "11 015021210-0001\n"
+        "21 015021210\n"
+        "22 15.03.2025\n"
+        "73 SHENZHEN ABC CO., LTD.\n"
+        "74 GULDE & PARTNER PATENT- UND\n"
+        "Wallstr. 58/59\n"
+        "D-10179 Berlin\n"
+        "51 12 - 05\n"
+        "54 Trolley cases\n"
+    )
+    r = parser._regex_extract(text, "EUIPO")
+    assert _normalize_locarno(r.get("locarno_class")) == "12-05"
+    assert r.get("application_number") == "015021210"
+    assert r.get("registration_number") == "015021210-0001"
+    assert r.get("title") == "Trolley cases"
+    assert "SHENZHEN" in r.get("applicant", "")
+
+
+def test_euipo_inid_51_next_line():
+    parser = GazetteParser(use_vision=False)
+    r = parser._regex_extract("51\n12 - 05\n", "EUIPO")
+    assert _normalize_locarno(r.get("locarno_class")) == "12-05"
+
+
+def test_parse_date_european():
+    assert _parse_date_flexible("15.03.2025") == date(2025, 3, 15)
+    assert _parse_date_flexible("15/03/2025") == date(2025, 3, 15)
+
+
 def test_parse_date_iso():
     assert _parse_date_flexible("2024-01-15") == date(2024, 1, 15)
 

@@ -32,11 +32,13 @@ class PDFExtractor:
     """PDF에서 텍스트와 이미지를 추출하는 저수준 유틸리티"""
 
     @staticmethod
-    def extract_text(pdf_path: str) -> str:
+    def extract_text(pdf_path: str, sort: bool = False) -> str:
+        """PDF 텍스트 추출. sort=True면 읽기 순서(좌→우, 상→하)로 정렬해
+        다단 레이아웃에서 코드와 값이 인접하게 나올 확률을 높인다."""
         doc = fitz.open(pdf_path)
         text_parts = []
         for page in doc:
-            text_parts.append(page.get_text())
+            text_parts.append(page.get_text(sort=sort))
         doc.close()
         return "\n".join(text_parts)
 
@@ -208,6 +210,8 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             re.compile(r"Registration\s*(?:No|Number)[.:\s]*([\d\s-]+\d)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"RCD\s*(?:No|Number)?[.:\s]*([\d-]+)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"^\s*\(?11\)?[ \t]+([\d][\d ./-]{4,}\d)[ \t]*$", re.MULTILINE),
+            # RCD/EU 디자인 등록번호 형식(9자리-4자리)이 단독 줄로 나오는 경우
+            re.compile(r"^[ \t]*(\d{9}-\d{4})[ \t]*$", re.MULTILINE),
         ],
         "title": [
             re.compile(r"Product\s*(?:Indication)?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
@@ -239,6 +243,13 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             re.compile(r"^\s*51\s*\n?\s*(\d{1,2}\s*[-–.]\s*\d{1,2})", re.MULTILINE),
             re.compile(r"\bClass(?:ification)?[^\d]{0,10}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
             re.compile(r"\bCl\.?[^\d]{0,6}(\d{1,2}\s*[-.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
+            # 최후 수단: 코드와 값이 분리 추출되는 2단 레이아웃 대비 —
+            # '12 - 05' 또는 '12-05, 12-08' 처럼 분류만 있는 단독 줄을 직접 탐지.
+            # 페이지 번호('1 - 2') 오인 방지를 위해 서브클래스는 2자리(공식 표기)만 허용
+            re.compile(
+                r"^[ \t]*(\d{1,2}[ \t]*[-–][ \t]*\d{2})(?:[ \t]*[,;][ \t]*\d{1,2}[ \t]*[-–][ \t]*\d{2})*[ \t]*$",
+                re.MULTILINE,
+            ),
         ],
         "local_class_codes": [],
         "design_description": [
@@ -367,6 +378,14 @@ class GazetteParser:
         text = self.extractor.extract_text(pdf_path)
 
         result = self._regex_extract(text, office)
+
+        # 다단 레이아웃 대비: 분류를 못 찾았으면 읽기 순서로 정렬해 재추출 후 빈 항목 보완
+        if not result.get("locarno_class"):
+            sorted_text = self.extractor.extract_text(pdf_path, sort=True)
+            retry = self._regex_extract(sorted_text, office)
+            for k, v in retry.items():
+                if v and not result.get(k):
+                    result[k] = v
 
         # 핵심 서지정보(출원번호/등록번호)가 없거나, 분류·물품명이 비었으면 Vision으로 보완
         no_id = not result.get("application_number") and not result.get("registration_number")

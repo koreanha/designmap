@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.0 (국제공보 INID 형식 지원)"
+APP_VERSION = "v2.1 (EUIPO 등록증 2단 레이아웃 지원)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

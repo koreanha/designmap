@@ -246,3 +246,27 @@ def test_parse_json_response_robustness():
     assert parse_json_response('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_response('설명 {"a": [1,2,3]} 끝') == {"a": [1, 2, 3]}
     assert parse_json_response('{"a": [1, 2,], "b": 3,}') == {"a": [1, 2], "b": 3}
+
+
+def test_euipo_disjoint_columns_fallback():
+    """등록증(2단 레이아웃)에서 코드와 값이 분리 추출되는 경우의 최후 패턴."""
+    parser = GazetteParser(use_vision=False)
+    text = (
+        "Copia Certificada\n"
+        "D113D\n"
+        "10/12/2025\n"
+        "015021210-0001\n"
+        "CERTIFICATE OF REGISTRATION\n"
+        "Trolley cases\n"
+        "12 - 05\n"
+    )
+    r = parser._regex_extract(text, "EUIPO")
+    assert _normalize_locarno(r.get("locarno_class")) == "12-05"
+    assert r.get("registration_number") == "015021210-0001"
+
+
+def test_euipo_fallback_no_false_positives():
+    parser = GazetteParser(use_vision=False)
+    for bad in ["10/12/2025\n", "1 - 2\n", "E - 03008 Alicante\n"]:
+        r = parser._regex_extract(bad, "EUIPO")
+        assert not r.get("locarno_class"), f"오인: {bad!r}"

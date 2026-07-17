@@ -275,8 +275,10 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
+APP_VERSION = "v1.9 (EUIPO 로카르노 인식 개선 + 진단)"
+
 st.sidebar.title("📐 DesignMap")
-st.sidebar.caption("디자인권 분류 · 트렌드 예측")
+st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
 
 key_ok = api_key_available()
 st.sidebar.markdown("**AI 열쇠**: " + ("🟢 설정됨" if key_ok else "🔴 없음"))
@@ -362,6 +364,38 @@ if step.startswith("①"):
     )
     office = st.selectbox("발행 특허청", ["KIPO", "USPTO", "EUIPO", "CNIPA", "JPO"])
     no_vision = st.checkbox("AI Vision OCR 끄기 (텍스트 추출만, 빠름/무료)", value=False)
+
+    with st.expander("🔍 진단 — PDF에서 글자가 어떻게 읽히는지 확인 (분류가 99-99로 나올 때)"):
+        st.write("폴더의 첫 번째 PDF에서 추출된 실제 텍스트와 인식 결과를 보여줍니다. "
+                 "이 내용을 복사해 개발자(AI)에게 보여주면 원인을 정확히 찾을 수 있습니다.")
+        if st.button("진단 실행"):
+            if not folder or not Path(folder).exists():
+                st.error("먼저 위에서 폴더를 지정하세요.")
+            else:
+                pdfs = sorted(Path(folder).glob("**/*.pdf"))
+                if not pdfs:
+                    st.error("폴더에 PDF가 없습니다.")
+                else:
+                    from src.collectors.pdf_parser import PDFExtractor, GazetteParser, _normalize_locarno
+
+                    target = pdfs[0]
+                    text = PDFExtractor.extract_text(str(target))
+                    st.markdown(f"**파일:** `{target.name}` · 추출된 글자 수: **{len(text.strip())}자**")
+                    if len(text.strip()) < 30:
+                        st.error("⚠️ 이 PDF는 글자가 거의 추출되지 않습니다 → **스캔(이미지) PDF**입니다. "
+                                 "정규식으로는 읽을 수 없고, 'AI Vision OCR 끄기'를 **해제**하고 읽어야 합니다(크레딧 소모).")
+                    parser = GazetteParser(use_vision=False)
+                    fields = parser._regex_extract(text, office)
+                    st.markdown("**인식된 항목:**")
+                    st.json({
+                        "출원번호": fields.get("application_number"),
+                        "등록번호": fields.get("registration_number"),
+                        "물품명": fields.get("title"),
+                        "로카르노(원문)": fields.get("locarno_class"),
+                        "로카르노(정규화)": _normalize_locarno(fields.get("locarno_class")),
+                    })
+                    st.markdown("**추출 텍스트 앞부분 (2,000자):** — 이 부분을 복사해서 공유해주세요")
+                    st.code(text[:2000] or "(비어 있음)")
 
     if st.button("PDF 읽기 시작", type="primary"):
         if not folder or not Path(folder).exists():

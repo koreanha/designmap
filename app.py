@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.4 (EN 물품명 고정·권리자 회사명 추출)"
+APP_VERSION = "v2.5 (진단 상세화)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -391,11 +391,31 @@ if step.startswith("①"):
                         "출원번호": fields.get("application_number"),
                         "등록번호": fields.get("registration_number"),
                         "물품명": fields.get("title"),
+                        "출원인": fields.get("applicant"),
                         "로카르노(원문)": fields.get("locarno_class"),
                         "로카르노(정규화)": _normalize_locarno(fields.get("locarno_class")),
                     })
-                    st.markdown("**추출 텍스트 앞부분 (2,000자):** — 이 부분을 복사해서 공유해주세요")
+
+                    # 물품명·출원인 관련 원문 줄 표시 (원인 파악용)
+                    lines = text.split("\n")
+                    interesting = []
+                    for idx, ln in enumerate(lines):
+                        s = ln.strip()
+                        if not s:
+                            continue
+                        import re as _re
+                        if (_re.search(r"\b(?:EN|ES|FR|DE|IT)\s*[-–]", s)
+                                or _re.match(r"^\(?5[14]\)?\b", s)
+                                or _re.match(r"^\(?7[234]\)?\b", s)
+                                or _re.search(r"\b(?:Co\.|Ltd|Inc|GmbH|LLC)\b", s, _re.IGNORECASE)):
+                            interesting.append(f"[{idx + 1}행] {ln}")
+                    st.markdown("**물품명(54/EN)·출원인(73/74) 관련 원문 줄:** — 이 부분을 복사해서 공유해주세요")
+                    st.code("\n".join(interesting[:40]) or "(관련 줄을 찾지 못함)")
+
+                    st.markdown("**추출 텍스트 앞부분 (2,000자):**")
                     st.code(text[:2000] or "(비어 있음)")
+                    st.download_button("⬇️ 전체 추출 텍스트 (.txt)", text,
+                                       file_name=f"{target.stem}_extracted.txt")
 
     if st.button("PDF 읽기 시작", type="primary"):
         if not folder or not Path(folder).exists():

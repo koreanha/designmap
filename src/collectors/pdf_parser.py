@@ -214,6 +214,8 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             re.compile(r"^[ \t]*(\d{9}-\d{4})[ \t]*$", re.MULTILINE),
         ],
         "title": [
+            # 다국어 병기 시 영어(EN) 표기를 최우선으로 선택
+            re.compile(r"^[ \t]*EN[ \t]*[-–][ \t]*(.+?)[ \t]*$", re.MULTILINE),
             re.compile(r"Product\s*(?:Indication)?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Indication\s*of\s*(?:the\s*)?product[s]?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"^\s*\(?54\)?\s+(.+?)\s*$", re.MULTILINE),
@@ -620,6 +622,20 @@ _FIELD_FORMATS: dict[str, re.Pattern] = {
 }
 
 
+# 언어코드 접두어 (다국어 병기 공보의 'ES - ...', 'EN - ...' 등)
+_LANG_PREFIX = re.compile(r"^[A-Z]{2}\s*[-–]\s*")
+
+# 주소로 보이는 줄 (출원인 칸에 주소가 들어가는 것 방지)
+_ADDRESS_LIKE = re.compile(
+    r"^\d|\b(?:Room|Building|Road|Street|Avenue|Floor|District|Blvd|Ave\.?|No\.\s*\d)\b",
+    re.IGNORECASE,
+)
+_COMPANY_LIKE = re.compile(
+    r"\b(?:Co\.|Ltd|Inc|Corp|GmbH|LLC|S\.?L\.?|S\.?A\.?|AG|BV|Oy|AB|주식회사|유한회사|株式会社|有限公司)\b",
+    re.IGNORECASE,
+)
+
+
 def _sanitize_fields(result: dict) -> dict:
     """AI/정규식 추출 결과에서 placeholder 답변과 형식 불일치 값을 제거.
 
@@ -636,6 +652,12 @@ def _sanitize_fields(result: dict) -> dict:
         fmt = _FIELD_FORMATS.get(k)
         if fmt and not fmt.search(s):
             continue
+        if k == "title":
+            s = _LANG_PREFIX.sub("", s).strip() or s
+        if k in ("applicant", "designer"):
+            # 회사명 표식 없이 주소 형태면 잘못 잡힌 것 → 버림
+            if _ADDRESS_LIKE.search(s) and not _COMPANY_LIKE.search(s):
+                continue
         cleaned[k] = s
     return cleaned
 

@@ -299,3 +299,22 @@ def test_sanitize_keeps_valid_values():
 def test_sanitize_rejects_malformed_locarno():
     from src.collectors.pdf_parser import _sanitize_fields
     assert _sanitize_fields({"locarno_class": "class twelve"}) == {}
+
+
+def test_title_language_prefix_stripped():
+    from src.collectors.pdf_parser import _sanitize_fields
+    assert _sanitize_fields({"title": "ES - Robots de transporte"})["title"] == "Robots de transporte"
+
+
+def test_title_prefers_english_line():
+    parser = GazetteParser(use_vision=False)
+    text = "54\nES - Robots de transporte\nEN - Transport robots\n"
+    r = parser._regex_extract(text, "EUIPO")
+    assert r.get("title") == "Transport robots"
+
+
+def test_applicant_address_rejected_company_kept():
+    from src.collectors.pdf_parser import _sanitize_fields
+    assert _sanitize_fields({"applicant": "Room 802, Information Building 13"}) == {}
+    assert _sanitize_fields({"applicant": "500 OAKWOOD ROAD"}) == {}
+    assert _sanitize_fields({"applicant": "SHENZHEN ABC CO., LTD."}) != {}

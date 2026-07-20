@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.2 (AI 답변 검증 강화)"
+APP_VERSION = "v2.3 (물품명 영어 우선·출원인 정제)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -436,12 +436,15 @@ if step.startswith("①"):
                                     "물품명": p.title,
                                     "로카르노": p.locarno_class,
                                     "출원인": p.applicant or "",
-                                    "도면": len(p.drawings),
+                                    "추출된 도면 수": len(p.drawings),
                                 }
                                 for p in patents[:200]
                             ],
                             use_container_width=True,
                         )
+                        st.caption("※ '추출된 도면 수'는 PDF에서 뽑아낸 이미지 개수입니다 "
+                                   "(대표도·정면도·사시도 등 모든 도면과 문서 내 기타 이미지 포함). "
+                                   "이미지 파일은 PDF 폴더 옆 drawings 폴더에 저장됩니다.")
                 except Exception as e:
                     show_ai_error(e)
 

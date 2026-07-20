@@ -393,8 +393,13 @@ class GazetteParser:
         if self.use_vision and (no_id or missing_core or not result.get("title")):
             result = self._vision_extract(pdf_path, office, result)
 
+        # AI가 '확인 불가/N/A' 등으로 답한 placeholder와 형식이 어긋난 값 제거
+        result = _sanitize_fields(result)
+
         if not result.get("application_number") and not result.get("registration_number"):
-            return None
+            # 파일 1개=디자인 1건 전제이므로, 번호를 못 찾으면 파일명을 식별자로 사용
+            # (등록증 사본 등에서 파일명이 곧 등록번호인 경우가 많음)
+            result["application_number"] = Path(pdf_path).stem
 
         img_dir = drawings_output_dir or str(Path(pdf_path).parent / "drawings")
         images = self.extractor.extract_images(
@@ -496,11 +501,13 @@ class GazetteParser:
         """Claude Vision으로 PDF 페이지를 분석하여 서지사항 추출"""
         import base64
 
+        # 등록증 사본 등은 앞쪽이 인증 표지이고 실제 서지정보가 뒤에 있으므로
+        # 충분한 페이지(최대 5쪽)를 AI에 보여준다.
         rendered = self.extractor.render_pages(
             pdf_path,
             str(Path(pdf_path).parent / ".vision_cache"),
-            dpi=200,
-            max_pages=2,
+            dpi=150,
+            max_pages=5,
         )
         if not rendered:
             return partial
@@ -527,18 +534,21 @@ class GazetteParser:
             "text": f"""이 디자인 공보 PDF({office} 발행)에서 다음 정보를 추출해주세요:
 {field_names.get(office.upper(), field_names["KIPO"])}
 
+중요: 문서에서 찾을 수 없는 항목은 반드시 null 로 답하세요.
+"확인 불가", "N/A", "없음" 같은 문구를 값으로 넣지 마세요.
+
 JSON으로 응답해주세요:
 {{
-  "application_number": "출원번호",
-  "registration_number": "등록번호",
-  "title": "물품명",
-  "applicant": "출원인/권리자",
-  "designer": "창작자/디자이너",
-  "filing_date": "출원일 (YYYY-MM-DD)",
-  "registration_date": "등록일 (YYYY-MM-DD)",
-  "locarno_class": "로카르노 분류 (XX-XX 형식)",
-  "local_class_codes": "각국 분류코드",
-  "design_description": "디자인 설명 (최대 500자)"
+  "application_number": "출원번호 또는 null",
+  "registration_number": "등록번호 또는 null",
+  "title": "물품명 또는 null",
+  "applicant": "출원인/권리자 또는 null",
+  "designer": "창작자/디자이너 또는 null",
+  "filing_date": "출원일 YYYY-MM-DD 또는 null",
+  "registration_date": "등록일 YYYY-MM-DD 또는 null",
+  "locarno_class": "로카르노 분류 XX-XX 또는 null",
+  "local_class_codes": "각국 분류코드 또는 null",
+  "design_description": "디자인 설명 (최대 500자) 또는 null"
 }}""",
         })
 
@@ -589,6 +599,45 @@ JSON으로 응답해주세요:
             ))
 
         return drawings
+
+
+_PLACEHOLDER_PATTERNS = re.compile(
+    r"확인\s*불가|알\s*수\s*없|미기재|기재\s*없|미표시|미포함|명시되지|정보\s*없음|해당\s*정보|해당\s*없"
+    r"|^n/?a\b|not\s*(?:specified|available|provided|found|indicated)|unknown|없음$",
+    re.IGNORECASE,
+)
+
+_FIELD_FORMATS: dict[str, re.Pattern] = {
+    # 번호류: 숫자가 4개 이상 포함되어야 함
+    "application_number": re.compile(r"(?:\D*\d){4,}"),
+    "registration_number": re.compile(r"(?:\D*\d){4,}"),
+    "publication_number": re.compile(r"(?:\D*\d){4,}"),
+    # 분류: XX-XX / XX.XX / XX 형태
+    "locarno_class": re.compile(r"^\s*\(?\s*\d{1,2}\s*(?:[-–.]\s*\d{1,2})?\s*\)?\s*$"),
+    # 날짜: 숫자 포함
+    "filing_date": re.compile(r"\d"),
+    "registration_date": re.compile(r"\d"),
+}
+
+
+def _sanitize_fields(result: dict) -> dict:
+    """AI/정규식 추출 결과에서 placeholder 답변과 형식 불일치 값을 제거.
+
+    예: '확인 불가 (문서에 미기재)', 'N/A' 같은 값이 출원번호·분류로
+    저장되는 것을 방지한다.
+    """
+    cleaned: dict = {}
+    for k, v in result.items():
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s or _PLACEHOLDER_PATTERNS.search(s):
+            continue
+        fmt = _FIELD_FORMATS.get(k)
+        if fmt and not fmt.search(s):
+            continue
+        cleaned[k] = s
+    return cleaned
 
 
 def _normalize_locarno(value: str | None) -> str | None:

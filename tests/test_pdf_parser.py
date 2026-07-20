@@ -270,3 +270,32 @@ def test_euipo_fallback_no_false_positives():
     for bad in ["10/12/2025\n", "1 - 2\n", "E - 03008 Alicante\n"]:
         r = parser._regex_extract(bad, "EUIPO")
         assert not r.get("locarno_class"), f"오인: {bad!r}"
+
+
+def test_sanitize_rejects_placeholders():
+    from src.collectors.pdf_parser import _sanitize_fields
+    bad = {
+        "application_number": "확인 불가 (문서에 미기재)",
+        "registration_number": "N/A (문서에 기재 없음)",
+        "title": "알 수 없음 (문서에 미기재)",
+        "applicant": "확인불가 (이미지에 미기재)",
+        "locarno_class": "해당 정보 없음",
+        "designer": "not specified",
+    }
+    assert _sanitize_fields(bad) == {}
+
+
+def test_sanitize_keeps_valid_values():
+    from src.collectors.pdf_parser import _sanitize_fields
+    good = {
+        "application_number": "015021210-0001",
+        "title": "Trolley cases",
+        "locarno_class": "12 - 05",
+        "applicant": "SHENZHEN ABC CO., LTD.",
+    }
+    assert _sanitize_fields(good) == good
+
+
+def test_sanitize_rejects_malformed_locarno():
+    from src.collectors.pdf_parser import _sanitize_fields
+    assert _sanitize_fields({"locarno_class": "class twelve"}) == {}

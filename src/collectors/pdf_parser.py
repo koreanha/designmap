@@ -214,8 +214,11 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             re.compile(r"^[ \t]*(\d{9}-\d{4})[ \t]*$", re.MULTILINE),
         ],
         "title": [
-            # 다국어 병기 시 영어(EN) 표기를 최우선으로 선택
-            re.compile(r"^[ \t]*EN[ \t]*[-–][ \t]*(.+?)[ \t]*$", re.MULTILINE),
+            # 다국어 병기(54) 중 영어(EN) 표기를 최우선으로 선택.
+            # 'EN - ...' 이 줄 어디에 있든, 다음 언어코드( FR - / DE - ...) 직전까지 캡처
+            re.compile(
+                r"\bEN[ \t]*[-–][ \t]*(.+?)(?=[ \t]+[A-Z]{2}[ \t]*[-–][ \t]|[\n\r]|$)",
+            ),
             re.compile(r"Product\s*(?:Indication)?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Indication\s*of\s*(?:the\s*)?product[s]?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"^\s*\(?54\)?\s+(.+?)\s*$", re.MULTILINE),
@@ -223,7 +226,15 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
         "applicant": [
             re.compile(r"Holder[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Applicant[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
-            re.compile(r"^\s*\(?73\)?\s+(.+?)\s*$", re.MULTILINE),
+            re.compile(r"^\s*\(?7[34]\)?[ \t]+(.+?)[ \t]*$", re.MULTILINE),
+            # 최후 수단: 회사 표식(Co./Ltd/GmbH 등)이 있는 줄을 문서에서 탐색.
+            # 권리자(73)가 대리인(74)보다 먼저 나오므로 첫 매칭이 권리자일 확률이 높음
+            re.compile(
+                r"^[ \t]*([^\n]{2,90}?\b(?:Co\.?\s*,?\s*Ltd\.?|Ltd\.?|LLC|Inc\.?|Corp\.?"
+                r"|GmbH|A\.?G\.?|S\.?L\.?U?\.?|S\.?A\.?|N\.?V\.?|B\.?V\.?|Oy|AB"
+                r"|주식회사|株式会社|有限公司)[^\n]{0,30})[ \t]*$",
+                re.MULTILINE | re.IGNORECASE,
+            ),
         ],
         "designer": [
             re.compile(r"Designer[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
@@ -483,19 +494,26 @@ class GazetteParser:
         df.to_excel(output_path, index=False)
 
     def _regex_extract(self, text: str, office: str) -> dict:
-        """정규식으로 서지사항 추출"""
+        """정규식으로 서지사항 추출.
+
+        한 패턴이 부적합한 값(주소·placeholder 등)을 잡으면 버리고
+        다음 패턴으로 계속 시도한다.
+        """
         patterns = OFFICE_PATTERNS.get(office.upper(), {})
         result = {}
 
         for field, regexes in patterns.items():
             for regex in regexes:
                 match = regex.search(text)
-                if match:
-                    value = match.group(1).strip()
-                    if field == "design_description":
-                        value = value[:1000]
-                    result[field] = value
-                    break
+                if not match:
+                    continue
+                value = match.group(1).strip()
+                if field == "design_description":
+                    value = value[:1000]
+                if not _candidate_ok(field, value):
+                    continue  # 부적합 → 다음 패턴 시도
+                result[field] = value
+                break
 
         return result
 
@@ -634,6 +652,19 @@ _COMPANY_LIKE = re.compile(
     r"\b(?:Co\.|Ltd|Inc|Corp|GmbH|LLC|S\.?L\.?|S\.?A\.?|AG|BV|Oy|AB|주식회사|유한회사|株式会社|有限公司)\b",
     re.IGNORECASE,
 )
+
+
+def _candidate_ok(field: str, value: str) -> bool:
+    """정규식 후보 값이 해당 필드로 적합한지 검사 (부적합하면 다음 패턴 시도)."""
+    if not value or _PLACEHOLDER_PATTERNS.search(value):
+        return False
+    fmt = _FIELD_FORMATS.get(field)
+    if fmt and not fmt.search(value):
+        return False
+    if field in ("applicant", "designer"):
+        if _ADDRESS_LIKE.search(value) and not _COMPANY_LIKE.search(value):
+            return False
+    return True
 
 
 def _sanitize_fields(result: dict) -> dict:

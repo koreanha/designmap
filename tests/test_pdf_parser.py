@@ -318,3 +318,27 @@ def test_applicant_address_rejected_company_kept():
     assert _sanitize_fields({"applicant": "Room 802, Information Building 13"}) == {}
     assert _sanitize_fields({"applicant": "500 OAKWOOD ROAD"}) == {}
     assert _sanitize_fields({"applicant": "SHENZHEN ABC CO., LTD."}) != {}
+
+
+def test_euipo_title_en_and_applicant_company():
+    """사용자 실제 사례: 54의 EN 값, 73 블록의 회사명 추출."""
+    parser = GazetteParser(use_vision=False)
+    text = (
+        "54\n"
+        "ES - Robots de transporte (parte de -)\n"
+        "EN - transportation robots (part of - )\n"
+        "FR - robots de transport\n"
+        "73 Room 802, Information Building 13 Linyin North\n"
+        "HAI ROBOTICS Co., LTD\n"
+        "74 GULDE & PARTNER PATENT- UND\n"
+    )
+    r = parser._regex_extract(text, "EUIPO")
+    assert r.get("title") == "transportation robots (part of - )"
+    assert r.get("applicant") == "HAI ROBOTICS Co., LTD"
+
+
+def test_euipo_title_en_inline():
+    parser = GazetteParser(use_vision=False)
+    text = "54 ES - Robots EN - transportation robots (part of - ) FR - robots\n"
+    r = parser._regex_extract(text, "EUIPO")
+    assert r.get("title") == "transportation robots (part of - )"

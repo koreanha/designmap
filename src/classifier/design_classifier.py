@@ -4,10 +4,8 @@
 """
 from __future__ import annotations
 
-import json
-
 from src.models import DesignPatent, ClassificationResult, ClassificationCriteria
-from src.utils.ai import get_client, DEFAULT_MODEL
+from src.utils.ai import get_client, DEFAULT_MODEL, parse_json_response
 from src.utils.image_loader import load_image_as_base64
 
 
@@ -59,6 +57,10 @@ class DesignClassifier:
 ### 트렌드 키워드 참조
 {', '.join(self.criteria.trend_keywords)}
 
+## 응답 규칙
+- 설명 문장 없이 **JSON만** 출력하세요.
+- reasoning은 2문장 이내로 간결하게 작성하세요.
+
 ## 응답 형식 (JSON)
 {{
   "primary_category": "주 분류 (첫 번째 차원의 값)",
@@ -70,33 +72,72 @@ class DesignClassifier:
 }}""",
         })
 
-        response = self.client.messages.create(
-            model=DEFAULT_MODEL,
-            max_tokens=1500,
-            messages=[{"role": "user", "content": content}],
-        )
+        pid = patent.id or patent.application_number
 
-        text = response.content[0].text
+        # assistant 프리필 '{' 로 JSON 외 서두(설명문)를 원천 차단하고,
+        # 잘림 방지를 위해 토큰 여유를 둔다.
         try:
-            start = text.index("{")
-            end = text.rindex("}") + 1
-            data = json.loads(text[start:end])
-            return ClassificationResult(
-                patent_id=patent.id or patent.application_number,
-                primary_category=data["primary_category"],
-                secondary_categories=data.get("secondary_categories", []),
-                confidence=data.get("confidence", 0.5),
-                reasoning=data.get("reasoning", ""),
-                design_features=data.get("design_features", []),
-                trend_tags=data.get("trend_tags", []),
+            response = self.client.messages.create(
+                model=DEFAULT_MODEL,
+                max_tokens=2000,
+                messages=[
+                    {"role": "user", "content": content},
+                    {"role": "assistant", "content": "{"},
+                ],
             )
-        except (json.JSONDecodeError, ValueError, KeyError):
+        except Exception as e:  # API 오류는 해당 건만 실패로 기록 (배치는 계속)
             return ClassificationResult(
-                patent_id=patent.id or patent.application_number,
+                patent_id=pid,
                 primary_category="unclassified",
                 confidence=0.0,
-                reasoning="분류 응답 파싱 실패",
+                reasoning=f"AI 호출 실패: {type(e).__name__}: {str(e)[:300]}",
             )
+
+        raw = "".join(
+            b.text for b in response.content if getattr(b, "type", None) == "text"
+        )
+        raw = "{" + raw  # 프리필한 '{' 복원
+        truncated = getattr(response, "stop_reason", None) == "max_tokens"
+
+        try:
+            data = parse_json_response(raw)
+        except Exception:
+            reason = "응답이 중간에 잘렸습니다(내용 과다). " if truncated else ""
+            return ClassificationResult(
+                patent_id=pid,
+                primary_category="unclassified",
+                confidence=0.0,
+                reasoning=f"{reason}응답 파싱 실패 · 원문 일부: {raw[:300]}",
+            )
+
+        category = data.get("primary_category") or data.get("category")
+        if not category:
+            return ClassificationResult(
+                patent_id=pid,
+                primary_category="unclassified",
+                confidence=0.0,
+                reasoning=f"분류값(primary_category) 누락 · 원문 일부: {raw[:300]}",
+            )
+
+        try:
+            confidence = float(data.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+
+        def _as_list(v):
+            if isinstance(v, list):
+                return [str(x) for x in v]
+            return [str(v)] if v else []
+
+        return ClassificationResult(
+            patent_id=pid,
+            primary_category=str(category),
+            secondary_categories=_as_list(data.get("secondary_categories")),
+            confidence=max(0.0, min(1.0, confidence)),
+            reasoning=str(data.get("reasoning", "")),
+            design_features=_as_list(data.get("design_features")),
+            trend_tags=_as_list(data.get("trend_tags")),
+        )
 
     async def classify_batch(self, patents, progress_callback=None) -> list[ClassificationResult]:
         results = []

@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.8 (물품명·출원인 영문 통일)"
+APP_VERSION = "v2.9 (분류 실패 원인 진단·재시도)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -725,6 +725,71 @@ elif step.startswith("⑤"):
         c1.metric("분류 대상(통과)", passed_n)
         c2.metric("이미 분류됨", done_n)
         c3.metric("남은 건수", pending_n)
+
+        # 분류 실패(unclassified) 건 안내 및 재시도
+        async def _failed_info():
+            db = Database()
+            await db.init()
+            return await db.count_unclassified_results(), await db.get_failed_classification_samples()
+
+        try:
+            failed_n, failed_samples = run_async(_failed_info())
+        except Exception:
+            failed_n, failed_samples = 0, []
+
+        if failed_n:
+            st.error(f"⚠️ 분류 실패(unclassified) {failed_n}건이 있습니다. 아래 사유를 확인하세요.")
+            for s in failed_samples:
+                st.caption(f"• `{s['patent_id']}` — {s.get('reasoning') or '(사유 없음)'}")
+            if st.button(f"🔄 실패한 {failed_n}건 다시 분류하기 (기존 실패 기록 삭제)"):
+                async def _clear():
+                    db = Database()
+                    await db.init()
+                    return await db.delete_unclassified_results()
+
+                try:
+                    n = run_async(_clear())
+                    st.success(f"{n}건의 실패 기록을 삭제했습니다. 아래에서 다시 분류를 실행하세요.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"삭제 실패: {e}")
+
+        with st.expander("🧪 1건만 시험 분류 (크레딧 최소, 결과·오류 원인 확인)"):
+            st.write("먼저 1건만 분류해 결과와 실패 사유를 확인한 뒤 전체를 돌리는 것을 권장합니다.")
+            if st.button("시험 분류 실행", disabled=not key_ok or crit.status != "approved"):
+                from src.classifier.design_classifier import DesignClassifier
+
+                async def _trial():
+                    db = Database()
+                    await db.init()
+                    rows = await db.get_unclassified_screened_patents() \
+                        or await db.get_screened_patents(passed_only=True)
+                    if not rows:
+                        return None, None
+                    p = row_to_patent(rows[0])
+                    return p, await DesignClassifier(crit).classify(p)
+
+                with st.spinner("1건 분류 중..."):
+                    try:
+                        patent, res = run_async(_trial())
+                        if res is None:
+                            st.warning("분류할 대상이 없습니다.")
+                        elif res.primary_category == "unclassified":
+                            st.error("❌ 분류 실패 — 사유:")
+                            st.code(res.reasoning or "(사유 없음)")
+                        else:
+                            st.success(f"✅ 분류 성공: **{res.primary_category}** (신뢰도 {res.confidence})")
+                            st.json({
+                                "물품명": patent.title,
+                                "주분류": res.primary_category,
+                                "보조분류": res.secondary_categories,
+                                "신뢰도": res.confidence,
+                                "근거": res.reasoning,
+                                "디자인특징": res.design_features,
+                                "트렌드태그": res.trend_tags,
+                            })
+                    except Exception as e:
+                        show_ai_error(e)
 
         # 지금까지 저장된 분류 결과 보기 (비용 없음)
         if done_n > 0:

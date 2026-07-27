@@ -148,6 +148,35 @@ class Database:
             result = await session.execute(text("SELECT * FROM classification_results"))
             return [dict(row._mapping) for row in result.fetchall()]
 
+    async def count_unclassified_results(self) -> int:
+        """분류 실패(unclassified)로 저장된 건수."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                text("SELECT COUNT(*) FROM classification_results "
+                     "WHERE primary_category = 'unclassified'")
+            )
+            return result.scalar() or 0
+
+    async def delete_unclassified_results(self) -> int:
+        """분류 실패 건을 삭제해 다시 분류할 수 있게 한다. 삭제 건수 반환."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                text("DELETE FROM classification_results "
+                     "WHERE primary_category = 'unclassified'")
+            )
+            await session.commit()
+            return result.rowcount or 0
+
+    async def get_failed_classification_samples(self, limit: int = 3) -> list[dict]:
+        """분류 실패 건의 사유 샘플 (원인 진단용)."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                text("SELECT patent_id, reasoning FROM classification_results "
+                     "WHERE primary_category = 'unclassified' LIMIT :n"),
+                {"n": limit},
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+
     async def get_classified_joined(self) -> list[dict]:
         """분류 결과를 디자인권 서지정보와 결합해 반환 (결과 보기/엑셀용)."""
         async with self.session_factory() as session:

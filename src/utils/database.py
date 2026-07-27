@@ -184,6 +184,7 @@ class Database:
                 text(
                     "SELECT p.application_number, p.registration_number, p.patent_office, "
                     "p.title, p.locarno_class, p.applicant, p.filing_date, "
+                    "p.drawings_json, "
                     "c.primary_category, c.secondary_categories, c.confidence, "
                     "c.reasoning, c.design_features, c.trend_tags "
                     "FROM classification_results c "

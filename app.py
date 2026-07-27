@@ -26,6 +26,11 @@ import streamlit as st
 
 from src.utils.ai import api_key_available, friendly_api_error
 from src.utils.database import Database
+from src.utils.export import (
+    representative_image,
+    to_excel_bytes,
+    to_excel_with_images_bytes,
+)
 from src.utils.paths import data_path
 from src.models import ClassificationCriteria, ClassificationResult
 from src.models.design_patent import PatentOffice, DrawingImage, DesignPatent
@@ -209,18 +214,6 @@ def offer_report_downloads(md_text: str, key_prefix: str = ""):
         st.caption(f"Word 변환 오류: {e}")
 
 
-def to_excel_bytes(rows: list[dict]) -> bytes:
-    """dict 목록을 Excel 파일 바이트로 변환 (다운로드용)."""
-    import io
-
-    import pandas as pd
-
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="분류결과")
-    return buf.getvalue()
-
-
 def render_status_banner(status: str):
     icon, label = STATUS_LABELS.get(status, ("⚪", status))
     msg = f"{icon} 현재 상태: **{label}**"
@@ -275,7 +268,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.0 (분류 구조화 출력)"
+APP_VERSION = "v3.1 (엑셀에 대표도면 포함)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -976,12 +969,29 @@ elif step.startswith("⑦"):
         st.dataframe(table_rows, use_container_width=True, hide_index=True)
 
         st.markdown("#### 내려받기")
+
+        img_paths = [representative_image(r.get("drawings_json")) for r in rows]
+        found = sum(1 for p in img_paths if p)
+        with_images = st.checkbox(
+            f"Excel에 대표도면 이미지 포함 (도면 확인됨 {found}/{len(rows)}건)",
+            value=found > 0, disabled=found == 0,
+            help="이미지가 들어가면 파일이 커지고 생성에 시간이 조금 걸립니다.",
+        )
+        if found == 0:
+            st.caption("※ 도면 이미지 파일을 찾을 수 없습니다. PDF를 읽은 폴더(옆의 drawings 폴더)가 "
+                       "이동·삭제되지 않았는지 확인하세요.")
+
         d1, d2, d3 = st.columns(3)
         try:
-            xlsx = to_excel_bytes(table_rows)
+            if with_images and found:
+                with st.spinner(f"대표도면 {found}건을 엑셀에 넣는 중..."):
+                    xlsx = to_excel_with_images_bytes(table_rows, img_paths)
+                label, fname = "⬇️ Excel (도면 포함)", "classification_results_with_images.xlsx"
+            else:
+                xlsx = to_excel_bytes(table_rows)
+                label, fname = "⬇️ Excel (.xlsx)", "classification_results.xlsx"
             d1.download_button(
-                "⬇️ Excel (.xlsx)", xlsx,
-                file_name="classification_results.xlsx",
+                label, xlsx, file_name=fname,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         except Exception as e:

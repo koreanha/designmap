@@ -376,3 +376,19 @@ def test_needs_translation_cjk_detection():
     assert not needs_translation("Transfer robot")
     assert not needs_translation("의자")
     assert not needs_translation(None)
+
+
+def test_jpo_special_char_markers_cleaned():
+    """일본 공보의 ▲문자▼ 표기(ST▲A▼UBLI = Stäubli) 복원."""
+    from src.collectors.pdf_parser import _sanitize_fields
+    from src.utils.translate import clean_special_chars
+    assert clean_special_chars("ST▲A▼UBLI WFT GmbH") == "STAUBLI WFT GmbH"
+    assert _sanitize_fields({"applicant": "ST▲A▼UBLI WFT GmbH"})["applicant"] == "STAUBLI WFT GmbH"
+
+
+def test_needs_translation_applicant_names():
+    from src.utils.translate import needs_translation
+    assert needs_translation("山田工業株式会社")
+    assert needs_translation("アプライド・エレクトリック・ビークルズ・リミテッド")
+    assert not needs_translation("BEIJING JINGDONG QIANSHI TECHNOLOGY CO., LTD.")
+    assert not needs_translation("Ocado Innovation Limited")

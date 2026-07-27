@@ -704,6 +704,8 @@ def _sanitize_fields(result: dict) -> dict:
         if v is None:
             continue
         s = str(v).strip()
+        # 일본 공보의 특수문자 표기 복원 (ST▲A▼UBLI → STAUBLI)
+        s = re.sub(r"▲(.)▼", r"\1", s)
         if not s or _PLACEHOLDER_PATTERNS.search(s):
             continue
         fmt = _FIELD_FORMATS.get(k)

@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.7 (물품명 영문 통일)"
+APP_VERSION = "v2.8 (물품명·출원인 영문 통일)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -418,13 +418,13 @@ if step.startswith("①"):
                                        file_name=f"{target.stem}_extracted.txt")
 
     translate_titles = st.checkbox(
-        "물품명을 영문으로 통일 (일본어·중국어 물품명을 AI로 번역, 소량 크레딧)",
+        "물품명·출원인을 영문으로 통일 (일본어·중국어를 AI로 번역, 소량 크레딧)",
         value=key_ok, disabled=not key_ok,
     )
 
     st.divider()
-    with st.expander("🌐 이미 불러온 데이터의 물품명 영문 통일 (다시 읽을 필요 없음)"):
-        st.write("DB에 저장된 물품명 중 일본어·중국어(한자)인 것만 골라 영문으로 바꿉니다.")
+    with st.expander("🌐 이미 불러온 데이터의 영문 통일 (다시 읽을 필요 없음)"):
+        st.write("DB에 저장된 **물품명·출원인** 중 일본어·중국어(한자·가나)인 것만 골라 영문으로 바꿉니다.")
         if st.button("영문 통일 실행", disabled=not key_ok):
             from src.utils.translate import needs_translation, translate_to_english
 
@@ -432,28 +432,44 @@ if step.startswith("①"):
                 db = Database()
                 await db.init()
                 rows = await db.get_all_patents()
-                targets = [r for r in rows if needs_translation(r.get("title"))]
-                if not targets:
-                    return 0, 0
-                mapping = translate_to_english([r["title"] for r in targets])
-                changed = 0
-                for r in targets:
-                    new_title = mapping.get(r["title"])
-                    if new_title:
-                        p = row_to_patent(r)
-                        p.metadata = {**(p.metadata or {}), "original_title": r["title"]}
-                        p.title = new_title
-                        await db.save_patent(p)
-                        changed += 1
-                return len(targets), changed
+                t_targets = [r for r in rows if needs_translation(r.get("title"))]
+                a_targets = [r for r in rows if needs_translation(r.get("applicant"))]
+                if not t_targets and not a_targets:
+                    return 0, 0, 0
 
-            with st.spinner("AI가 물품명 번역 중..."):
+                t_map = translate_to_english([r["title"] for r in t_targets], kind="title") \
+                    if t_targets else {}
+                a_map = translate_to_english([r["applicant"] for r in a_targets], kind="applicant") \
+                    if a_targets else {}
+
+                changed_t = changed_a = 0
+                for r in {id(x): x for x in (t_targets + a_targets)}.values():
+                    p = row_to_patent(r)
+                    meta = dict(p.metadata or {})
+                    hit = False
+                    if r.get("title") in t_map:
+                        meta["original_title"] = r["title"]
+                        p.title = t_map[r["title"]]
+                        changed_t += 1
+                        hit = True
+                    if r.get("applicant") in a_map:
+                        meta["original_applicant"] = r["applicant"]
+                        p.applicant = a_map[r["applicant"]]
+                        changed_a += 1
+                        hit = True
+                    if hit:
+                        p.metadata = meta
+                        await db.save_patent(p)
+                return len(t_targets) + len(a_targets), changed_t, changed_a
+
+            with st.spinner("AI가 물품명·출원인 번역 중..."):
                 try:
-                    total_t, changed = run_async(_translate_existing())
+                    total_t, changed_t, changed_a = run_async(_translate_existing())
                     if total_t == 0:
-                        st.info("번역이 필요한(한자·가나 포함) 물품명이 없습니다.")
+                        st.info("번역이 필요한(한자·가나 포함) 항목이 없습니다.")
                     else:
-                        st.success(f"{total_t}건 중 {changed}건 영문으로 변경 완료 (원문은 보존됨)")
+                        st.success(f"영문 변경 완료 — 물품명 {changed_t}건, 출원인 {changed_a}건 "
+                                   "(원문은 보존됨)")
                 except Exception as e:
                     show_ai_error(e)
 
@@ -488,13 +504,20 @@ if step.startswith("①"):
                             from src.utils.translate import needs_translation, translate_to_english
 
                             cjk_titles = [p.title for p in patents if needs_translation(p.title)]
-                            if cjk_titles:
-                                progress.progress(1.0, text="물품명 영문 번역 중... (AI)")
-                                mapping = translate_to_english(cjk_titles)
+                            cjk_apps = [p.applicant for p in patents if needs_translation(p.applicant)]
+                            if cjk_titles or cjk_apps:
+                                progress.progress(1.0, text="물품명·출원인 영문 번역 중... (AI)")
+                                t_map = translate_to_english(cjk_titles, kind="title") if cjk_titles else {}
+                                a_map = translate_to_english(cjk_apps, kind="applicant") if cjk_apps else {}
                                 for p in patents:
-                                    if p.title in mapping:
-                                        p.metadata = {**(p.metadata or {}), "original_title": p.title}
-                                        p.title = mapping[p.title]
+                                    meta = dict(p.metadata or {})
+                                    if p.title in t_map:
+                                        meta["original_title"] = p.title
+                                        p.title = t_map[p.title]
+                                    if p.applicant in a_map:
+                                        meta["original_applicant"] = p.applicant
+                                        p.applicant = a_map[p.applicant]
+                                    p.metadata = meta
                         run_async(_save())
                     st.success(f"{len(patents)}건 추출 완료 → DB 저장됨")
                     if patents:

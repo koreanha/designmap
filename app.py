@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.9 (분류 실패 원인 진단·재시도)"
+APP_VERSION = "v3.0 (분류 구조화 출력)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

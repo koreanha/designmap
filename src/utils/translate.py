@@ -11,7 +11,9 @@ import re
 
 from src.utils.ai import get_client
 
-_CJK = re.compile(r"[぀-ヿ㐀-鿿豈-﫿]")  # 가나 + 한자
+# 가나(U+3040-30FF) + 한자(U+3400-9FFF, U+F900-FAFF).
+# 한글(U+AC00-D7A3)은 포함하지 않는다 — 코드포인트로 명시해 오인 방지.
+_CJK = re.compile("[぀-ヿ㐀-鿿豈-﫿]")
 
 # 일본 공보의 특수문자 표기: ST▲A▼UBLI → STAUBLI (ä 등을 ▲문자▼로 표기)
 _JPO_SPECIAL_CHAR = re.compile(r"▲(.)▼")

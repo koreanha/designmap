@@ -392,3 +392,10 @@ def test_needs_translation_applicant_names():
     assert needs_translation("アプライド・エレクトリック・ビークルズ・リミテッド")
     assert not needs_translation("BEIJING JINGDONG QIANSHI TECHNOLOGY CO., LTD.")
     assert not needs_translation("Ocado Innovation Limited")
+
+
+def test_korean_not_treated_as_cjk_for_translation():
+    """한글은 번역 대상이 아니다 (한자 범위에 한글이 섞이지 않도록)."""
+    from src.utils.translate import needs_translation
+    for korean in ["의자", "휴대폰 케이스", "건축용 벽체", "가나다"]:
+        assert not needs_translation(korean), korean

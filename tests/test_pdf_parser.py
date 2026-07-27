@@ -367,3 +367,12 @@ def test_jpo_fullwidth_gazette():
     assert r.get("application_number") == "2025-500032"
     assert "BEIJING JINGDONG" in r.get("applicant", "")
     assert r.get("applicant", "").endswith("LTD.")
+
+
+def test_needs_translation_cjk_detection():
+    from src.utils.translate import needs_translation
+    assert needs_translation("電動車両")
+    assert needs_translation("搬送ロボット")
+    assert not needs_translation("Transfer robot")
+    assert not needs_translation("의자")
+    assert not needs_translation(None)

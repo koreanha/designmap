@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.6 (일본 공보 전각·【라벨】 지원)"
+APP_VERSION = "v2.7 (물품명 영문 통일)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -417,6 +417,46 @@ if step.startswith("①"):
                     st.download_button("⬇️ 전체 추출 텍스트 (.txt)", text,
                                        file_name=f"{target.stem}_extracted.txt")
 
+    translate_titles = st.checkbox(
+        "물품명을 영문으로 통일 (일본어·중국어 물품명을 AI로 번역, 소량 크레딧)",
+        value=key_ok, disabled=not key_ok,
+    )
+
+    st.divider()
+    with st.expander("🌐 이미 불러온 데이터의 물품명 영문 통일 (다시 읽을 필요 없음)"):
+        st.write("DB에 저장된 물품명 중 일본어·중국어(한자)인 것만 골라 영문으로 바꿉니다.")
+        if st.button("영문 통일 실행", disabled=not key_ok):
+            from src.utils.translate import needs_translation, translate_to_english
+
+            async def _translate_existing():
+                db = Database()
+                await db.init()
+                rows = await db.get_all_patents()
+                targets = [r for r in rows if needs_translation(r.get("title"))]
+                if not targets:
+                    return 0, 0
+                mapping = translate_to_english([r["title"] for r in targets])
+                changed = 0
+                for r in targets:
+                    new_title = mapping.get(r["title"])
+                    if new_title:
+                        p = row_to_patent(r)
+                        p.metadata = {**(p.metadata or {}), "original_title": r["title"]}
+                        p.title = new_title
+                        await db.save_patent(p)
+                        changed += 1
+                return len(targets), changed
+
+            with st.spinner("AI가 물품명 번역 중..."):
+                try:
+                    total_t, changed = run_async(_translate_existing())
+                    if total_t == 0:
+                        st.info("번역이 필요한(한자·가나 포함) 물품명이 없습니다.")
+                    else:
+                        st.success(f"{total_t}건 중 {changed}건 영문으로 변경 완료 (원문은 보존됨)")
+                except Exception as e:
+                    show_ai_error(e)
+
     if st.button("PDF 읽기 시작", type="primary"):
         if not folder or not Path(folder).exists():
             st.error("폴더 경로가 올바르지 않습니다.")
@@ -444,6 +484,17 @@ if step.startswith("①"):
                             for p in patents:
                                 await db.save_patent(p)
 
+                        if translate_titles and key_ok:
+                            from src.utils.translate import needs_translation, translate_to_english
+
+                            cjk_titles = [p.title for p in patents if needs_translation(p.title)]
+                            if cjk_titles:
+                                progress.progress(1.0, text="물품명 영문 번역 중... (AI)")
+                                mapping = translate_to_english(cjk_titles)
+                                for p in patents:
+                                    if p.title in mapping:
+                                        p.metadata = {**(p.metadata or {}), "original_title": p.title}
+                                        p.title = mapping[p.title]
                         run_async(_save())
                     st.success(f"{len(patents)}건 추출 완료 → DB 저장됨")
                     if patents:

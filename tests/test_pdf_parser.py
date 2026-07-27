@@ -399,3 +399,26 @@ def test_korean_not_treated_as_cjk_for_translation():
     from src.utils.translate import needs_translation
     for korean in ["의자", "휴대폰 케이스", "건축용 벽체", "가나다"]:
         assert not needs_translation(korean), korean
+
+
+def test_ab_suffix_does_not_match_inside_word():
+    """'AB'(스웨덴 법인 표기)가 'Abschrift' 같은 일반 단어 안에서 오탐하지 않아야 함."""
+    from src.collectors.pdf_parser import _candidate_ok, _sanitize_fields
+    assert not _candidate_ok("applicant", "Beglaubigte Abschrift")
+    assert _sanitize_fields({"applicant": "�Beglaubigte Abschrift"}) == {}
+    # 진짜 AB로 끝나는 회사는 여전히 인식되어야 함
+    assert _candidate_ok("applicant", "Volvo Group AB")
+    assert _candidate_ok("applicant", "Ericsson AB.")
+
+
+def test_certificate_cover_boilerplate_rejected():
+    """EUIPO 등록증 표지의 다국어 상투 문구가 출원인/물품명으로 잡히지 않아야 함."""
+    from src.collectors.pdf_parser import _candidate_ok
+    for text in [
+        "Certified Copy", "Copia Certificada", "Beglaubigte Abschrift",
+        "Certificate of Registration",
+        "European Union Intellectual Property Office",
+        "Business Operations Department",
+    ]:
+        assert not _candidate_ok("applicant", text), text
+        assert not _candidate_ok("title", text), text

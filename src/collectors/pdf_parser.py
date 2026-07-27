@@ -231,7 +231,7 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
             # 권리자(73)가 대리인(74)보다 먼저 나오므로 첫 매칭이 권리자일 확률이 높음
             re.compile(
                 r"^[ \t]*([^\n]{2,90}?\b(?:Co\.?\s*,?\s*Ltd\.?|Ltd\.?|LLC|Inc\.?|Corp\.?"
-                r"|GmbH|A\.?G\.?|S\.?L\.?U?\.?|S\.?A\.?|N\.?V\.?|B\.?V\.?|Oy|AB"
+                r"|GmbH|A\.?G\.?|S\.?L\.?U?\.?|S\.?A\.?|N\.?V\.?|B\.?V\.?|Oy\b|AB\b"
                 r"|주식회사|株式会社|有限公司)[^\n]{0,30})[ \t]*$",
                 re.MULTILINE | re.IGNORECASE,
             ),
@@ -653,6 +653,16 @@ _PLACEHOLDER_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# EUIPO 등록증(Certified Copy) 표지에 반복되는 다국어 상투 문구.
+# 서지정보 추출 패턴이 우연히 이 문구를 출원인/물품명으로 잘못 잡는 것을 방지.
+_CERT_COVER_BOILERPLATE = re.compile(
+    r"certified\s*copy|copia\s*certificada|beglaubigte\s*abschrift"
+    r"|copie\s*certifi[ée]e|copia\s*autenticata"
+    r"|certificate\s*of\s*registration|european\s*union\s*intellectual"
+    r"|business\s*operations\s*department|geistiges\s*eigentum",
+    re.IGNORECASE,
+)
+
 _FIELD_FORMATS: dict[str, re.Pattern] = {
     # 번호류: 숫자가 4개 이상 포함되어야 함
     "application_number": re.compile(r"(?:\D*\d){4,}"),
@@ -684,6 +694,8 @@ def _candidate_ok(field: str, value: str) -> bool:
     """정규식 후보 값이 해당 필드로 적합한지 검사 (부적합하면 다음 패턴 시도)."""
     if not value or _PLACEHOLDER_PATTERNS.search(value):
         return False
+    if field in ("applicant", "designer", "title") and _CERT_COVER_BOILERPLATE.search(value):
+        return False
     fmt = _FIELD_FORMATS.get(field)
     if fmt and not fmt.search(value):
         return False
@@ -707,6 +719,8 @@ def _sanitize_fields(result: dict) -> dict:
         # 일본 공보의 특수문자 표기 복원 (ST▲A▼UBLI → STAUBLI)
         s = re.sub(r"▲(.)▼", r"\1", s)
         if not s or _PLACEHOLDER_PATTERNS.search(s):
+            continue
+        if k in ("applicant", "designer", "title") and _CERT_COVER_BOILERPLATE.search(s):
             continue
         fmt = _FIELD_FORMATS.get(k)
         if fmt and not fmt.search(s):

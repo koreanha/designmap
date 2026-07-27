@@ -268,7 +268,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.1 (엑셀에 대표도면 포함)"
+APP_VERSION = "v3.2 (출원인 오탐 수정: AB 접미사)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

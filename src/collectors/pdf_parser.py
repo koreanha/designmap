@@ -311,41 +311,58 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
         ],
     },
     "JPO": {
+        # 주의: 실제 의장공보는 (５４)【意匠に係る物品】처럼 전각 문자 +
+        # 【라벨】 구조를 쓴다. _regex_extract가 NFKC 정규화(전각→반각) 후 매칭.
         "application_number": [
-            re.compile(r"出願番号[:\s]*([\w\d-]+)", re.MULTILINE),
+            re.compile(r"【出願番号】\s*意願\s*(\d{4}-\d+)", re.MULTILINE),
             re.compile(r"意願\s*(\d{4}-\d+)", re.MULTILINE),
+            re.compile(r"出願番号[:\s]*([\w\d-]+)", re.MULTILINE),
         ],
         "registration_number": [
+            re.compile(r"【登録番号】\s*意匠登録\s*第?\s*(\d+)\s*号?", re.MULTILINE),
+            re.compile(r"意匠登録\s*第?\s*(\d+)\s*号", re.MULTILINE),
             re.compile(r"登録番号[:\s]*([\d-]+)", re.MULTILINE),
-            re.compile(r"意匠登録\s*第?\s*(\d+)\s*号?", re.MULTILINE),
         ],
         "title": [
+            # 訳(参考) 줄이 아닌 원문 물품명 줄을 먼저 매칭 (원문이 먼저 나옴)
+            re.compile(r"【意匠に係る物品】\s*(.+?)\s*$", re.MULTILINE),
             re.compile(r"意匠に係る物品[:\s]*(.+?)(?:\n|$)", re.MULTILINE),
             re.compile(r"物品[:\s]*(.+?)(?:\n|$)", re.MULTILINE),
         ],
         "applicant": [
+            # (73)【意匠権者】 다음 줄 【氏名又は名称】 값 (줄바꿈으로 이어질 수 있음)
+            re.compile(r"【意匠権者】\s*【氏名又は名称】\s*((?:[^\n]+)(?:\n(?!【|\(|（)[^\n]+)*)", re.MULTILINE),
+            re.compile(r"【氏名又は名称】\s*((?:[^\n]+)(?:\n(?!【|\(|（)[^\n]+)*)", re.MULTILINE),
             re.compile(r"出願人[:\s]*(.+?)(?:\n|$)", re.MULTILINE),
             re.compile(r"意匠権者[:\s]*(.+?)(?:\n|$)", re.MULTILINE),
         ],
         "designer": [
+            re.compile(r"【創作者】\s*【氏名】\s*([^\n]+)", re.MULTILINE),
             re.compile(r"創作者[:\s]*(.+?)(?:\n|$)", re.MULTILINE),
         ],
         "filing_date": [
+            # 【出願日(国際登録日)】令和7年1月13日(2025.1.13) → 괄호 안 서기 날짜
+            re.compile(r"【出願日[^】]*】[^(（\n]*[（(](\d{4}[.\d]+)[）)]", re.MULTILINE),
             re.compile(r"出願日[:\s]*([\d./-]+)", re.MULTILINE),
         ],
         "registration_date": [
+            re.compile(r"【登録日】[^(（\n]*[（(](\d{4}[.\d]+)[）)]", re.MULTILINE),
             re.compile(r"登録日[:\s]*([\d./-]+)", re.MULTILINE),
         ],
         "locarno_class": [
+            # (51)【国際意匠分類】Loc(14)Cl.12-05
+            re.compile(r"【国際意匠分類】[^\n]*?Cl\s*[.．]?\s*(\d{1,2}\s*[-–.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
+            re.compile(r"Loc\s*\(\d+\)\s*Cl\s*[.．]?\s*(\d{1,2}\s*[-–.]\s*\d{1,2})", re.MULTILINE | re.IGNORECASE),
             re.compile(r"ロカルノ分類[:\s]*([\d-]+)", re.MULTILINE),
-            re.compile(r"LOC[:\s]*([\d-]+)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"国際分類[:\s]*([\d-]+)", re.MULTILINE),
         ],
         "local_class_codes": [
+            re.compile(r"【意匠分類】\s*([\w\d-]+)", re.MULTILINE),
             re.compile(r"日本意匠分類[:\s]*([\w\d-]+)", re.MULTILINE),
             re.compile(r"Dターム[:\s]*([\w\d-]+)", re.MULTILINE),
         ],
         "design_description": [
+            re.compile(r"【意匠の説明】\s*(.+?)(?:【|$)", re.DOTALL),
             re.compile(r"意匠の説明[:\s]*(.+?)(?:図面|$)", re.DOTALL),
         ],
     },
@@ -502,6 +519,12 @@ class GazetteParser:
         patterns = OFFICE_PATTERNS.get(office.upper(), {})
         result = {}
 
+        # 전각 문자(１２－０５, （５１）, Ｔｒａｎｓｆｅｒ 등)를 반각으로 정규화
+        # — 일본 공보 등 전각 표기 문서에서 필수
+        import unicodedata
+
+        text = unicodedata.normalize("NFKC", text)
+
         for field, regexes in patterns.items():
             for regex in regexes:
                 match = regex.search(text)
@@ -510,6 +533,9 @@ class GazetteParser:
                 value = match.group(1).strip()
                 if field == "design_description":
                     value = value[:1000]
+                else:
+                    # 줄바꿈으로 이어진 값(회사명 등)을 한 줄로
+                    value = re.sub(r"\s*\n\s*", " ", value).strip()
                 if not _candidate_ok(field, value):
                     continue  # 부적합 → 다음 패턴 시도
                 result[field] = value
@@ -684,6 +710,7 @@ def _sanitize_fields(result: dict) -> dict:
         if fmt and not fmt.search(s):
             continue
         if k == "title":
+            s = s.lstrip("】]」 ").strip()
             s = _LANG_PREFIX.sub("", s).strip() or s
         if k in ("applicant", "designer"):
             # 회사명 표식 없이 주소 형태면 잘못 잡힌 것 → 버림

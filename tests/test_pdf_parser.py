@@ -342,3 +342,28 @@ def test_euipo_title_en_inline():
     text = "54 ES - Robots EN - transportation robots (part of - ) FR - robots\n"
     r = parser._regex_extract(text, "EUIPO")
     assert r.get("title") == "transportation robots (part of - )"
+
+
+def test_jpo_fullwidth_gazette():
+    """실제 의장공보(전각 문자 + 【라벨】 구조) 사례."""
+    from src.collectors.pdf_parser import _sanitize_fields
+    parser = GazetteParser(use_vision=False)
+    text = (
+        "（１１）【登録番号】意匠登録第１８１１７７１号（Ｄ１８１１７７１）\n"
+        "（２４）【登録日】令和７年１０月２０日（２０２５．１０．２０）\n"
+        "（５４）【意匠に係る物品】Ｔｒａｎｓｆｅｒ　ｒｏｂｏｔ\n"
+        "（５４）【意匠に係る物品の訳（参考）】搬送ロボット\n"
+        "（５１）【国際意匠分類】Ｌｏｃ（１４）Ｃｌ．１２－０５\n"
+        "（２１）【出願番号】意願２０２５－５０００３２（Ｄ２０２５－５０００３２）\n"
+        "（７３）【意匠権者】\n"
+        "【氏名又は名称】ＢＥＩＪＩＮＧ　ＪＩＮＧＤＯＮＧ　ＱＩＡＮＳＨＩ　ＴＥＣＨＮＯＬＯＧＹ　ＣＯ．，　\n"
+        "ＬＴＤ．\n"
+        "【住所又は居所】Ｒｏｏｍ　Ａ１９０５\n"
+    )
+    r = _sanitize_fields(parser._regex_extract(text, "JPO"))
+    assert r.get("title") == "Transfer robot"
+    assert _normalize_locarno(r.get("locarno_class")) == "12-05"
+    assert r.get("registration_number") == "1811771"
+    assert r.get("application_number") == "2025-500032"
+    assert "BEIJING JINGDONG" in r.get("applicant", "")
+    assert r.get("applicant", "").endswith("LTD.")

@@ -275,7 +275,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v2.5 (진단 상세화)"
+APP_VERSION = "v2.6 (일본 공보 전각·【라벨】 지원)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

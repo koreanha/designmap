@@ -268,7 +268,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.2 (출원인 오탐 수정: AB 접미사)"
+APP_VERSION = "v3.3 (분류 기준 버전 이력)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -603,10 +603,24 @@ elif step.startswith("③"):
     st.header("③ 분류 기준 제안 (AI)")
     st.write("도면과 PEST 분석을 바탕으로 AI가 분류 기준을 제안합니다.")
 
+    from src.utils.criteria_history import append_version, get_latest_approved
+
+    prev_approved = get_latest_approved()
+    if prev_approved:
+        prev_name = prev_approved["criteria"].get("name", "")
+        st.warning(
+            f"⚠️ 이미 **승인된 기준(버전 {prev_approved['version']}: {prev_name})** 이 있습니다.\n\n"
+            "지금 새로 제안을 받으면 이 기준을 대체합니다. 데이터를 나눠서 불러오는 중이라면, "
+            "새 기준이 이전 분석과 달라져 **일관성이 깨질 수 있습니다.**\n\n"
+            "👉 대부분의 경우 **④ 기준 수정/승인**에서 '이전 기준 이어서 쓰기'를 눌러 "
+            "**기존 기준을 유지한 채** 이번에 추가된 데이터만 반영하는 것을 권장합니다."
+        )
+
     st.caption("스크리닝을 통과한 디자인권을 대상으로 분석합니다.")
     context = st.text_area("분석 목적 / 컨텍스트", placeholder="예: 건축구성요소 외관 디자인 트렌드 분석")
 
-    if st.button("분류 기준 제안 받기", type="primary", disabled=not key_ok):
+    btn_label = "🆕 새 기준 제안 받기 (기존 기준 대체)" if prev_approved else "분류 기준 제안 받기"
+    if st.button(btn_label, type="primary" if not prev_approved else "secondary", disabled=not key_ok):
         if True:
             from src.classifier.criteria_proposer import CriteriaProposer
 
@@ -636,7 +650,10 @@ elif step.startswith("③"):
                             json.dumps(crit.model_dump(), ensure_ascii=False, indent=2),
                             encoding="utf-8",
                         )
-                        st.success("제안 완료 → data/proposed_criteria.json 저장됨")
+                        entry = append_version(crit.model_dump(), "proposed",
+                                               note="AI 신규 제안" + (f" · {context}" if context else ""))
+                        st.success(f"제안 완료 (버전 {entry['version']}로 이력에 기록됨) "
+                                   "→ data/proposed_criteria.json 저장됨")
                         render_criteria(crit)
                         st.info("👉 다음: 왼쪽 메뉴 **④ 기준 수정/승인** 에서 검토·수정 후 승인하세요.")
                 except Exception as e:
@@ -646,16 +663,63 @@ elif step.startswith("③"):
 # ─────────────────────────────── ④ 기준 수정/승인 ───────────────────────────────
 elif step.startswith("④"):
     st.header("④ 분류 기준 수정 / 승인")
+
+    from src.utils.criteria_history import (
+        append_version, diff_criteria, get_latest_approved, load_history,
+    )
+
     if not Path(CRITERIA_FILE).exists():
         st.warning("아직 제안된 기준이 없습니다. ③을 먼저 진행하세요.")
     else:
         crit = ClassificationCriteria(**json.loads(Path(CRITERIA_FILE).read_text(encoding="utf-8")))
         from src.classifier.criteria_proposer import CriteriaProposer
 
+        history = load_history()
+        prev_approved = get_latest_approved()
+
+        # 방금 ③에서 새로 제안받아 이전 승인본과 다른 경우, 되돌리기 옵션 제공
+        if (prev_approved and crit.status != "approved"
+                and prev_approved["criteria"] != crit.model_dump()):
+            st.info(f"💡 이전에 **승인된 기준(버전 {prev_approved['version']})** 이 있습니다. "
+                    "지금 화면은 아직 승인 안 된 새 제안입니다.")
+            if st.button("↩️ 이전 승인 기준 이어서 쓰기 (새 제안 취소)"):
+                Path(CRITERIA_FILE).write_text(
+                    json.dumps(prev_approved["criteria"], ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                st.success(f"버전 {prev_approved['version']}로 되돌렸습니다.")
+                st.rerun()
+
         render_status_banner(crit.status)
         render_criteria(crit)
         with st.expander("원본 데이터(JSON) 보기 — 고급"):
             st.json(crit.model_dump())
+
+        # ── 버전 이력 ──
+        with st.expander(f"🕘 기준 버전 이력 ({len(history)}개)", expanded=False):
+            if not history:
+                st.caption("아직 이력이 없습니다.")
+            else:
+                for entry in reversed(history):
+                    c = entry["criteria"]
+                    ts = entry["timestamp"][:16].replace("T", " ")
+                    badge = "🟢 승인됨" if c.get("status") == "approved" else "🟡 " + entry["action"]
+                    with st.container(border=True):
+                        st.markdown(f"**버전 {entry['version']}** · {ts} · {badge}"
+                                   + (f" · _{entry['note']}_" if entry.get("note") else ""))
+                        prior = next(
+                            (h["criteria"] for h in history if h["version"] == entry["version"] - 1),
+                            None,
+                        )
+                        for line in diff_criteria(prior, c):
+                            st.caption(f"　{line}")
+                        if st.button(f"이 버전(v{entry['version']})으로 복원",
+                                    key=f"restore_{entry['version']}"):
+                            Path(CRITERIA_FILE).write_text(
+                                json.dumps(c, ensure_ascii=False, indent=2), encoding="utf-8"
+                            )
+                            st.success(f"버전 {entry['version']}로 복원했습니다.")
+                            st.rerun()
 
         st.subheader("AI에게 수정 요청")
         feedback = st.text_area("수정 요청 내용",
@@ -675,7 +739,8 @@ elif step.startswith("④"):
                             json.dumps(revised.model_dump(), ensure_ascii=False, indent=2),
                             encoding="utf-8",
                         )
-                        st.success("수정 완료 (저장됨). 아래에 반영된 내용을 확인하세요.")
+                        append_version(revised.model_dump(), "refined", note=feedback[:200])
+                        st.success("수정 완료 (이력에 기록됨). 아래에 반영된 내용을 확인하세요.")
                         st.rerun()
                     except Exception as e:
                         show_ai_error(e)
@@ -687,6 +752,7 @@ elif step.startswith("④"):
             data = json.loads(Path(CRITERIA_FILE).read_text(encoding="utf-8"))
             data["status"] = "approved"
             Path(CRITERIA_FILE).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            append_version(data, "approved", note="사용자 승인")
             st.success("승인 완료 (status: approved) → ⑤ 분류 실행으로 이동하세요.")
 
 

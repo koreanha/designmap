@@ -5,6 +5,7 @@ API 키가 없을 때 비전공자도 이해할 수 있는 안내 메시지를 �
 from __future__ import annotations
 
 import os
+import re
 
 import anthropic
 
@@ -37,6 +38,28 @@ def get_client() -> anthropic.Anthropic:
     if not api_key_available():
         raise MissingAPIKeyError(_MISSING_KEY_MESSAGE)
     return anthropic.Anthropic(timeout=600.0, max_retries=4)
+
+
+# 모든 AI 산출물(리포트·분류 근거·기준 등)의 언어 규칙.
+# 입력 데이터에 일본어·중국어 공보가 섞여 있어 출력이 그쪽 언어로 끌려가는 것을 방지한다.
+KOREAN_OUTPUT_RULE = """
+## 출력 언어 규칙 (반드시 지킬 것)
+- 모든 서술은 **한국어**로 작성합니다.
+- 한자(漢字)·일본어(かな)·중국어 간체자를 **절대 사용하지 마세요**.
+  예: '為美'(X) → '기반으로'(O), '據鎳'(X) → '핵심'(O), '334氟'(X) → '334건'(O)
+- 영어는 다음 경우에만 허용합니다: 고유명사(회사명·브랜드), 원문 물품명,
+  널리 쓰이는 기술 용어. 이때도 가능하면 '한글(영어)' 형태로 씁니다.
+  예: 시저 리프트(Scissor Lift), 자율주행 모바일 로봇(AMR)
+- 입력 데이터에 일본어·중국어가 있어도, 출력은 한국어로 옮겨 적습니다.
+"""
+
+# 한자·가나(한국어 텍스트에 섞이면 안 되는 문자). 한글·영문·숫자는 제외.
+_NON_KOREAN_CJK = re.compile("[぀-ヿ㐀-鿿豈-﫿]")
+
+
+def contains_foreign_cjk(text: str | None) -> bool:
+    """한국어 산출물에 한자·가나가 섞였는지 검사 (품질 점검용)."""
+    return bool(text and _NON_KOREAN_CJK.search(text))
 
 
 def parse_json_response(text: str) -> dict:

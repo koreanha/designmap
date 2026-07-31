@@ -139,8 +139,19 @@ def markdown_to_docx_bytes(md_text: str) -> bytes:
     import re
 
     from docx import Document
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
 
     doc = Document()
+
+    # 한글 폰트를 명시하지 않으면 Word가 동아시아 글꼴을 중국어 폰트로 대체해
+    # 한글이 깨져 보일 수 있다. 본문/동아시아 글꼴을 모두 맑은 고딕으로 고정.
+    normal = doc.styles["Normal"]
+    normal.font.name = "Malgun Gothic"
+    normal.font.size = Pt(10.5)
+    rpr = normal.element.get_or_add_rPr().get_or_add_rFonts()
+    for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        rpr.set(qn(attr), "Malgun Gothic")
 
     def add_runs(paragraph, text: str):
         for part in re.split(r"(\*\*.+?\*\*)", text):
@@ -268,7 +279,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.3 (분류 기준 버전 이력)"
+APP_VERSION = "v3.4 (한글 우선 산출물)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

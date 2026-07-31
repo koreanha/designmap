@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 from src.models import DesignPatent, ClassificationResult, ClassificationCriteria
-from src.utils.ai import get_client, DEFAULT_MODEL, parse_json_response
+from src.utils.ai import (
+    get_client, DEFAULT_MODEL, KOREAN_OUTPUT_RULE, parse_json_response,
+)
 from src.utils.image_loader import load_image_as_base64
 
 
@@ -105,7 +107,7 @@ class DesignClassifier:
 ## 응답 규칙
 - 설명 문장 없이 **JSON만** 출력하세요.
 - reasoning은 2문장 이내로 간결하게 작성하세요.
-
+{KOREAN_OUTPUT_RULE}
 ## 응답 형식 (JSON)
 {{
   "primary_category": "주 분류 (첫 번째 차원의 값)",
@@ -138,6 +140,7 @@ class DesignClassifier:
             )
 
         data = None
+        raw = ""
         for block in response.content:
             if getattr(block, "type", None) == "tool_use":
                 data = block.input

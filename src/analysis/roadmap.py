@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from datetime import date
 
 from src.models import ClassificationResult, DesignPatent, ClassificationCriteria
-from src.utils.ai import get_client, DEFAULT_MODEL
+from src.utils.ai import get_client, DEFAULT_MODEL, KOREAN_OUTPUT_RULE
 
 
 class DesignRoadmapAnalyzer:
@@ -92,8 +92,7 @@ class DesignRoadmapAnalyzer:
 4. **주요 디자인 특징**: 빈도 높은 디자인 요소 분석
 5. **미래 트렌드 예측**: PEST 분석 기반 향후 3-5년 디자인 방향 예측
 6. **전략적 시사점**: 디자인 개발 방향 제안
-
-한국어로 작성해주세요."""
+{KOREAN_OUTPUT_RULE}"""
 
         response = self.client.messages.create(
             model=DEFAULT_MODEL,

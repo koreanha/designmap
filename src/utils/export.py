@@ -48,6 +48,12 @@ def to_excel_with_images_bytes(rows: list[dict], image_paths: list[str | None],
     ws = wb.active
     ws.title = "분류결과"
 
+    # 한글 폰트를 지정하지 않으면 일부 환경에서 한글이 중국어 폰트로 대체되어
+    # 깨져 보일 수 있다.
+    from openpyxl.styles import Font
+
+    korean_font = Font(name="Malgun Gothic", size=10)
+
     headers = ["대표도면"] + list(rows[0].keys()) if rows else ["대표도면"]
     ws.append(headers)
 
@@ -58,6 +64,10 @@ def to_excel_with_images_bytes(rows: list[dict], image_paths: list[str | None],
     ws.column_dimensions["A"].width = thumb_px / 7
     for i, h in enumerate(headers[1:], start=2):
         ws.column_dimensions[get_column_letter(i)].width = min(max(len(str(h)) + 6, 14), 45)
+
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.font = korean_font
 
     buffers = []  # 저장 전까지 스트림을 살려둬야 함
     for idx, src in enumerate(image_paths):

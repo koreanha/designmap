@@ -9,7 +9,9 @@ import json
 
 from src.models import DesignPatent, ClassificationCriteria, CriterionDimension, PESTFactor
 from src.models.criteria import PESTCategory
-from src.utils.ai import get_client, DEFAULT_MODEL, parse_json_response
+from src.utils.ai import (
+    get_client, DEFAULT_MODEL, KOREAN_OUTPUT_RULE, parse_json_response,
+)
 from src.utils.image_loader import load_image_as_base64
 
 
@@ -73,7 +75,7 @@ class CriteriaProposer:
    - 각 차원에 대해 가능한 값(values)과 예시(examples) 포함
 2. **디자인 트렌드 키워드(trend_keywords)**: 현재 관찰되는 디자인 트렌드
 3. **PEST 요인(pest_factors)**: 디자인 트렌드에 영향을 미치는 정치/경제/사회/기술 요인
-
+{KOREAN_OUTPUT_RULE}
 JSON 형식:
 {{
   "name": "분류 기준 이름",
@@ -171,7 +173,7 @@ JSON 형식:
   pest_factors(category/factor/relevance/impact_level), trend_keywords
 - 피드백과 무관한 부분은 가능한 한 그대로 보존하세요.
 - category 값은 political/economic/social/technological 중 하나여야 합니다.
-
+{KOREAN_OUTPUT_RULE}
 JSON만 출력하세요."""
 
         data = None

@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v4.1 (물품명 전 언어 영문화)"
+APP_VERSION = "v4.2 (리포트 관점 이력)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -1127,7 +1127,29 @@ elif step.startswith("⑥"):
     if not (Path(CRITERIA_FILE).exists() and Path(RESULTS_FILE).exists()):
         st.warning("분류 결과가 없습니다. ⑤ 분류를 먼저 실행하세요.")
     else:
-        context = st.text_area("리포트 관점 (선택)", placeholder="예: 향후 5년 건축구성요소 디자인 방향 예측")
+        from src.utils.report_history import (
+            append_report, load_history as load_report_history, past_contexts,
+        )
+
+        rep_history = load_report_history()
+        contexts = past_contexts()
+
+        # 이전에 쓴 관점을 그대로 재사용할 수 있게 제공
+        if contexts:
+            picked_ctx = st.selectbox(
+                "이전에 사용한 관점 불러오기",
+                ["(직접 입력)"] + contexts,
+                help="같은 관점으로 다시 분석하면 이전 리포트와 비교하기 쉽습니다.",
+            )
+            if picked_ctx != "(직접 입력)" and st.button("이 관점 사용하기"):
+                st.session_state["report_context"] = picked_ctx
+                st.rerun()
+
+        context = st.text_area(
+            "리포트 관점 (선택)", key="report_context",
+            placeholder="예: 향후 5년 건축구성요소 디자인 방향 예측",
+        )
+
         if st.button("리포트 생성", type="primary", disabled=not key_ok):
             from src.analysis.roadmap import DesignRoadmapAnalyzer
 
@@ -1142,17 +1164,51 @@ elif step.startswith("⑥"):
                 analyzer = DesignRoadmapAnalyzer()
                 stats = analyzer.compute_statistics(patents, results)
                 text = await analyzer.generate_trend_report(stats, crit, context or None)
-                return text
+                return text, stats
 
             with st.spinner("AI가 트렌드 리포트 작성 중..."):
                 try:
-                    report_text = run_async(_run())
+                    report_text, stats = run_async(_run())
                     Path(REPORT_FILE).write_text(report_text, encoding="utf-8")
-                    st.success("리포트 생성 완료 → data/trend_report.md")
+                    entry = append_report(report_text, context or "", crit.name, stats)
+                    st.success(f"리포트 생성 완료 (버전 {entry['version']}로 이력에 기록됨) "
+                               "→ data/trend_report.md")
                     st.markdown(report_text)
                     offer_report_downloads(report_text, key_prefix="rep6_")
                 except Exception as e:
                     show_ai_error(e)
+
+        # ── 리포트 이력 ──
+        with st.expander(f"🕘 리포트 이력 ({len(rep_history)}개)", expanded=False):
+            if not rep_history:
+                st.caption("아직 생성한 리포트가 없습니다.")
+            else:
+                for entry in reversed(rep_history):
+                    ts = entry["timestamp"][:16].replace("T", " ")
+                    ctx = entry.get("context") or "(관점 미지정)"
+                    with st.container(border=True):
+                        st.markdown(f"**버전 {entry['version']}** · {ts}")
+                        st.caption(f"　🎯 관점: {ctx}")
+                        summary = entry.get("summary") or {}
+                        bits = [f"{k} {v}" for k, v in summary.items() if v]
+                        if entry.get("criteria_name"):
+                            bits.insert(0, f"기준: {entry['criteria_name']}")
+                        if bits:
+                            st.caption("　📊 " + " · ".join(bits))
+                        c1, c2 = st.columns(2)
+                        if c1.button(f"이 관점 다시 쓰기 (v{entry['version']})",
+                                     key=f"rep_ctx_{entry['version']}"):
+                            st.session_state["report_context"] = entry.get("context", "")
+                            st.rerun()
+                        if c2.button(f"내용 보기 (v{entry['version']})",
+                                     key=f"rep_view_{entry['version']}"):
+                            st.session_state["show_report"] = entry["version"]
+
+                        if st.session_state.get("show_report") == entry["version"]:
+                            st.markdown(entry["report"])
+                            offer_report_downloads(
+                                entry["report"], key_prefix=f"hist{entry['version']}_"
+                            )
 
 
 # ─────────────────────────────── ⑦ 결과 보기 / 내려받기 ───────────────────────────────

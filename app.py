@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v4.0 (대표도면 표지 제외)"
+APP_VERSION = "v4.1 (물품명 전 언어 영문화)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -559,15 +559,19 @@ if step.startswith("①"):
                 show_ai_error(e)
 
     with st.expander("🌐 이미 불러온 데이터의 영문 통일 (다시 읽을 필요 없음)"):
-        st.write("DB에 저장된 **물품명·출원인** 중 일본어·중국어(한자·가나)인 것만 골라 영문으로 바꿉니다.")
+        st.write("DB에 저장된 **물품명**을 영문으로 통일합니다 "
+                 "(스페인어·프랑스어·일본어 등 모든 언어 → 영어, 이미 영어면 그대로). "
+                 "**출원인**은 고유명사이므로 한자·가나인 경우만 로마자로 바꿉니다.")
         if st.button("영문 통일 실행", disabled=not key_ok):
-            from src.utils.translate import needs_translation, translate_to_english
+            from src.utils.translate import (
+                needs_english_normalization, needs_translation, translate_to_english,
+            )
 
             async def _translate_existing():
                 db = Database()
                 await db.init()
                 rows = await db.get_all_patents()
-                t_targets = [r for r in rows if needs_translation(r.get("title"))]
+                t_targets = [r for r in rows if needs_english_normalization(r.get("title"))]
                 a_targets = [r for r in rows if needs_translation(r.get("applicant"))]
                 if not t_targets and not a_targets:
                     return 0, 0, 0
@@ -601,7 +605,7 @@ if step.startswith("①"):
                 try:
                     total_t, changed_t, changed_a = run_async(_translate_existing())
                     if total_t == 0:
-                        st.info("번역이 필요한(한자·가나 포함) 항목이 없습니다.")
+                        st.info("영문 통일이 필요한 항목이 없습니다.")
                     else:
                         st.success(f"영문 변경 완료 — 물품명 {changed_t}건, 출원인 {changed_a}건 "
                                    "(원문은 보존됨)")
@@ -636,9 +640,12 @@ if step.startswith("①"):
                                 await db.save_patent(p)
 
                         if translate_titles and key_ok:
-                            from src.utils.translate import needs_translation, translate_to_english
+                            from src.utils.translate import (
+                                needs_english_normalization, needs_translation,
+                                translate_to_english,
+                            )
 
-                            cjk_titles = [p.title for p in patents if needs_translation(p.title)]
+                            cjk_titles = [p.title for p in patents if needs_english_normalization(p.title)]
                             cjk_apps = [p.applicant for p in patents if needs_translation(p.applicant)]
                             if cjk_titles or cjk_apps:
                                 progress.progress(1.0, text="물품명·출원인 영문 번역 중... (AI)")

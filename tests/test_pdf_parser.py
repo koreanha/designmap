@@ -537,3 +537,19 @@ def test_vision_fill_fields_asks_and_validates(tmp_path):
     p3 = GazetteParser(use_vision=False)
     p3._client = Boom()
     assert p3.vision_fill_fields(str(pdf), "EUIPO", ["title"]) == {}
+
+
+def test_title_normalization_covers_european_languages():
+    """물품명 영문 통일은 CJK뿐 아니라 스페인어 등 모든 언어를 대상으로 한다."""
+    from src.utils.translate import needs_english_normalization, needs_translation
+    # 악센트 없는 외국어(Camiones)도 대상이어야 함
+    for t in ["Automóviles", "Camiones (parte de -)", "Carrocerías de vehículos",
+              "Autobuses", "電動車両", "Motor vehicles"]:
+        assert needs_english_normalization(t), t
+    assert not needs_english_normalization("")
+    assert not needs_english_normalization(None)
+
+    # 출원인(고유명사)은 여전히 한자·가나만 대상
+    assert not needs_translation("POLARIS INDUSTRIES INC.")
+    assert not needs_translation("Daimler AG")
+    assert needs_translation("山田工業株式会社")

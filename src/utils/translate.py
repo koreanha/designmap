@@ -21,7 +21,12 @@ _JPO_SPECIAL_CHAR = re.compile(r"▲(.)▼")
 _PROMPTS = {
     "title": (
         "다음은 디자인 공보의 물품명(제품명)입니다. 각 항목을 간결한 영문 "
-        "물품명으로 번역해주세요. 디자인/특허 분야의 통용 표현을 사용하세요."
+        "물품명으로 통일해주세요. 디자인/특허 분야의 통용 표현을 사용하세요.\n"
+        "- 스페인어·프랑스어·독일어·폴란드어·이탈리아어 등 어떤 언어든 영어로 옮기세요.\n"
+        "  (예: Automóviles → Motor cars, Camiones → Trucks, "
+        "Carrocerías de vehículos → Vehicle bodies)\n"
+        "- '(parte de -)', '(część - )' 같은 부분 표시는 '(part of -)'로 통일하세요.\n"
+        "- **이미 영어인 항목은 원문 그대로 반환**하세요 (바꾸지 마세요)."
     ),
     "applicant": (
         "다음은 디자인 공보의 출원인/권리자(기업·개인) 이름입니다. "
@@ -44,8 +49,18 @@ def clean_special_chars(text: str | None) -> str | None:
 
 
 def needs_translation(text: str | None) -> bool:
-    """CJK 문자가 포함되어 영문 번역이 필요한지 여부."""
+    """CJK 문자가 포함되어 영문 번역이 필요한지 여부 (출원인 등 고유명사용)."""
     return bool(text and _CJK.search(text))
+
+
+def needs_english_normalization(text: str | None) -> bool:
+    """물품명을 영문으로 통일할 필요가 있는지.
+
+    악센트 없는 외국어(Camiones 등)도 있어 문자만으로는 판별할 수 없으므로,
+    비어 있지 않은 값은 모두 후보로 보고 AI가 판단하게 한다.
+    (이미 영어면 AI가 원문 그대로 돌려주므로 값이 바뀌지 않는다)
+    """
+    return bool(text and text.strip())
 
 
 def translate_to_english(
@@ -56,7 +71,9 @@ def translate_to_english(
     kind: "title"(물품명) 또는 "applicant"(출원인/권리자)
     실패한 배치는 건너뛰고 원문을 유지한다 (오류로 전체가 멈추지 않게).
     """
-    targets = [t for t in dict.fromkeys(texts) if needs_translation(t)]
+    # 물품명은 모든 언어를 영문으로 통일, 출원인(고유명사)은 한자·가나만 변환
+    check = needs_english_normalization if kind == "title" else needs_translation
+    targets = [t for t in dict.fromkeys(texts) if check(t)]
     if not targets:
         return {}
 

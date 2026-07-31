@@ -8,6 +8,74 @@ import json
 from pathlib import Path
 
 
+def _drawing_paths(drawings_json: str | None, limit: int = 12) -> list[str]:
+    """도면 목록에서 실제 존재하는 파일 경로를 순서대로 반환 (대표도면 우선)."""
+    if not drawings_json:
+        return []
+    try:
+        drawings = json.loads(drawings_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(drawings, list):
+        return []
+
+    ordered = [d for d in drawings if isinstance(d, dict) and d.get("drawing_type") == "representative"]
+    ordered += [d for d in drawings if isinstance(d, dict) and d not in ordered]
+
+    paths = []
+    for d in ordered:
+        p = d.get("file_path") or d.get("url")
+        if p and Path(p).exists():
+            paths.append(p)
+        if len(paths) >= limit:
+            break
+    return paths
+
+
+def _file_hash(path: str, _cache: dict = {}) -> str | None:
+    """파일 내용 해시 (동일 이미지 판별용). 경로별로 캐시."""
+    import hashlib
+
+    if path in _cache:
+        return _cache[path]
+    try:
+        h = hashlib.md5(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        h = None
+    _cache[path] = h
+    return h
+
+
+def select_representative_images(rows: list[dict]) -> list[str | None]:
+    """각 건의 대표도면을 고르되, 여러 건에 공통으로 나타나는 이미지는 제외한다.
+
+    EUIPO 등록증 표지의 로고·배경 그래픽처럼 모든 문서에 똑같이 들어 있는
+    이미지가 대표도면으로 잘못 선택되는 것을 막기 위함이다.
+    (같은 이미지가 여러 건에서 반복되면 그 건의 고유 도면일 수 없다)
+    """
+    from collections import Counter
+
+    per_row = [_drawing_paths(r.get("drawings_json")) for r in rows]
+
+    counts: Counter = Counter()
+    row_hashes: list[list[tuple[str, str | None]]] = []
+    for paths in per_row:
+        hashed = [(p, _file_hash(p)) for p in paths]
+        row_hashes.append(hashed)
+        counts.update({h for _, h in hashed if h})
+
+    n_rows = max(len(rows), 1)
+    # 3건 이상 & 전체의 30% 이상에서 반복되면 서식 장식으로 판단
+    boilerplate = {h for h, c in counts.items() if c >= 3 and c / n_rows >= 0.3}
+
+    picked: list[str | None] = []
+    for hashed in row_hashes:
+        choice = next((p for p, h in hashed if h and h not in boilerplate), None)
+        # 전부 공통 이미지뿐이면 어쩔 수 없이 첫 번째라도 사용
+        picked.append(choice or (hashed[0][0] if hashed else None))
+    return picked
+
+
 def representative_image(drawings_json: str | None) -> str | None:
     """도면 목록에서 대표도면 파일 경로를 고른다 (없으면 첫 번째 도면)."""
     if not drawings_json:

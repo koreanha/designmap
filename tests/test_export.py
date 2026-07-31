@@ -66,3 +66,48 @@ def test_excel_without_images_still_works():
     data = to_excel_bytes(rows)
     ws = load_workbook(io.BytesIO(data)).active
     assert [c.value for c in ws[1]] == ["출원번호", "주분류"]
+
+
+def test_boilerplate_cover_image_excluded(tmp_path):
+    """모든 건에 반복되는 표지·로고 이미지는 대표도면에서 제외한다."""
+    import json
+    import shutil
+    from src.utils.export import select_representative_images
+
+    cover = tmp_path / "cover.png"
+    Image.new("RGB", (300, 200), (20, 60, 200)).save(cover)
+
+    rows = []
+    for i in range(10):
+        d = tmp_path / f"p{i}"
+        d.mkdir()
+        c = d / "img0.png"
+        shutil.copy(cover, c)            # 전 건 공통(표지)
+        uniq = d / "img1.png"            # 건별 고유 도면
+        Image.new("RGB", (400, 300), (i * 20 % 255, 128, 64)).save(uniq)
+        rows.append({"drawings_json": json.dumps([
+            {"file_path": str(c), "drawing_type": "representative"},
+            {"file_path": str(uniq), "drawing_type": "front"},
+        ])})
+
+    picked = select_representative_images(rows)
+    assert all(p and "img1" in p for p in picked), picked
+
+
+def test_falls_back_when_only_boilerplate_available(tmp_path):
+    """도면이 공통 이미지뿐이면 빈칸 대신 그것이라도 사용."""
+    import json
+    from src.utils.export import select_representative_images
+
+    cover = tmp_path / "cover.png"
+    Image.new("RGB", (300, 200), "blue").save(cover)
+    rows = [{"drawings_json": json.dumps(
+        [{"file_path": str(cover), "drawing_type": "representative"}])} for _ in range(4)]
+    assert select_representative_images(rows)[0] is not None
+
+
+def test_select_handles_missing_and_invalid(tmp_path):
+    from src.utils.export import select_representative_images
+    rows = [{"drawings_json": None}, {"drawings_json": "깨진 JSON"},
+            {"drawings_json": '[{"file_path": "/없는/파일.png"}]'}]
+    assert select_representative_images(rows) == [None, None, None]

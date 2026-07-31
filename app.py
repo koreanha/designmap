@@ -27,7 +27,7 @@ import streamlit as st
 from src.utils.ai import api_key_available, friendly_api_error
 from src.utils.database import Database
 from src.utils.export import (
-    representative_image,
+    select_representative_images,
     to_excel_bytes,
     to_excel_with_images_bytes,
 )
@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.9 (빈칸 AI 보완)"
+APP_VERSION = "v4.0 (대표도면 표지 제외)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -1199,7 +1199,8 @@ elif step.startswith("⑦"):
 
         st.markdown("#### 내려받기")
 
-        img_paths = [representative_image(r.get("drawings_json")) for r in rows]
+        # 여러 건에 반복되는 서식 이미지(로고·표지)를 제외하고 고유 도면을 고른다
+        img_paths = select_representative_images(rows)
         found = sum(1 for p in img_paths if p)
         with_images = st.checkbox(
             f"Excel에 대표도면 이미지 포함 (도면 확인됨 {found}/{len(rows)}건)",

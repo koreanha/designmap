@@ -679,6 +679,15 @@ _FIELD_FORMATS: dict[str, re.Pattern] = {
 # 언어코드 접두어 (다국어 병기 공보의 'ES - ...', 'EN - ...' 등)
 _LANG_PREFIX = re.compile(r"^[A-Z]{2}\s*[-–]\s*")
 
+# 다국어 병기 공보의 언어 코드(EUIPO 공식 24개 언어 + 흔한 표기).
+# 2단 레이아웃에서 코드와 값이 어긋나면 이 코드 자체가 물품명으로,
+# 다른 언어의 물품명이 출원인으로 잘못 잡히므로 별도로 걸러낸다.
+_LANG_CODES = {
+    "BG", "ES", "CS", "DA", "DE", "ET", "EL", "EN", "FR", "GA", "HR", "IT",
+    "LV", "LT", "HU", "MT", "NL", "PL", "PT", "RO", "SK", "SL", "FI", "SV",
+    "JA", "ZH", "KO", "RU", "NO", "TR",
+}
+
 # 주소로 보이는 줄 (출원인 칸에 주소가 들어가는 것 방지)
 _ADDRESS_LIKE = re.compile(
     r"^\d|\b(?:Room|Building|Road|Street|Avenue|Floor|District|Blvd|Ave\.?|No\.\s*\d)\b",
@@ -690,11 +699,31 @@ _COMPANY_LIKE = re.compile(
 )
 
 
+def _is_language_code_only(value: str) -> bool:
+    """'FR', 'EN -' 처럼 언어 코드만 남은 값인지 (물품명으로 부적합)."""
+    s = _LANG_PREFIX.sub("", value).strip().strip("-–").strip()
+    return not s or s.upper() in _LANG_CODES
+
+
+def _looks_like_multilingual_product(value: str) -> bool:
+    """'PL - Samochody ciężarowe' 처럼 언어코드가 앞에 붙은 물품명인지.
+
+    출원인/디자이너 칸에 다른 언어의 물품명이 잘못 들어가는 것을 막는다.
+    (실제 회사명은 'PL - '처럼 언어 코드로 시작하지 않는다)
+    """
+    m = _LANG_PREFIX.match(value)
+    return bool(m and value[:2].upper() in _LANG_CODES)
+
+
 def _candidate_ok(field: str, value: str) -> bool:
     """정규식 후보 값이 해당 필드로 적합한지 검사 (부적합하면 다음 패턴 시도)."""
     if not value or _PLACEHOLDER_PATTERNS.search(value):
         return False
     if field in ("applicant", "designer", "title") and _CERT_COVER_BOILERPLATE.search(value):
+        return False
+    if field == "title" and _is_language_code_only(value):
+        return False
+    if field in ("applicant", "designer") and _looks_like_multilingual_product(value):
         return False
     fmt = _FIELD_FORMATS.get(field)
     if fmt and not fmt.search(value):
@@ -727,8 +756,13 @@ def _sanitize_fields(result: dict) -> dict:
             continue
         if k == "title":
             s = s.lstrip("】]」 ").strip()
+            if _is_language_code_only(s):
+                continue  # 'FR' 같은 언어 코드만 남은 값은 물품명이 아님
             s = _LANG_PREFIX.sub("", s).strip() or s
         if k in ("applicant", "designer"):
+            # 다른 언어의 물품명이 출원인으로 잘못 들어온 경우 → 버림
+            if _looks_like_multilingual_product(s):
+                continue
             # 회사명 표식 없이 주소 형태면 잘못 잡힌 것 → 버림
             if _ADDRESS_LIKE.search(s) and not _COMPANY_LIKE.search(s):
                 continue

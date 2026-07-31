@@ -422,3 +422,28 @@ def test_certificate_cover_boilerplate_rejected():
     ]:
         assert not _candidate_ok("applicant", text), text
         assert not _candidate_ok("title", text), text
+
+
+def test_language_code_not_used_as_title():
+    """2단 레이아웃에서 언어 코드('FR')가 물품명으로 잡히지 않아야 함."""
+    from src.collectors.pdf_parser import _candidate_ok, _sanitize_fields
+    for bad in ["FR", "EN", "PL", "EN -", "SV –"]:
+        assert not _candidate_ok("title", bad), bad
+        assert _sanitize_fields({"title": bad}) == {}, bad
+    # 정상 물품명은 유지 (언어 접두어는 제거)
+    assert _sanitize_fields({"title": "Motor vehicles"})["title"] == "Motor vehicles"
+    assert _sanitize_fields({"title": "EN - Motor vehicles"})["title"] == "Motor vehicles"
+
+
+def test_multilingual_product_name_not_used_as_applicant():
+    """다른 언어의 물품명이 출원인으로 잘못 들어가지 않아야 함."""
+    from src.collectors.pdf_parser import _candidate_ok, _sanitize_fields
+    for bad in ["PL - Samochody ciężarowe (część - )",
+                "SV - Släpvagnar till vägfordon",
+                "FR - Véhicules automobiles"]:
+        assert not _candidate_ok("applicant", bad), bad
+        assert _sanitize_fields({"applicant": bad}) == {}, bad
+    # 실제 회사명은 유지 (2글자로 시작해도 언어코드가 아니면 통과)
+    for good in ["Honda Motor Co., Ltd.", "iEV1 GmbH",
+                 "POLARIS INDUSTRIES INC.", "BMW AG", "SK Hynix Inc."]:
+        assert _sanitize_fields({"applicant": good})["applicant"] == good, good

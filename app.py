@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.5 (Word 제목 한글 폰트)"
+APP_VERSION = "v3.6 (언어코드 오탐 차단)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

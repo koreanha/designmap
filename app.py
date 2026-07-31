@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.6 (언어코드 오탐 차단)"
+APP_VERSION = "v3.7 (기준 이어서 쓰기 접근성)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -701,14 +701,63 @@ elif step.startswith("④"):
         append_version, diff_criteria, get_latest_approved, load_history,
     )
 
-    if not Path(CRITERIA_FILE).exists():
-        st.warning("아직 제안된 기준이 없습니다. ③을 먼저 진행하세요.")
+    history = load_history()
+    prev_approved = get_latest_approved()
+    has_current = Path(CRITERIA_FILE).exists()
+
+    def use_criteria(criteria_dict: dict, label: str):
+        """선택한 기준을 현재 기준으로 적용."""
+        Path(CRITERIA_FILE).write_text(
+            json.dumps(criteria_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        st.success(f"{label} 적용했습니다.")
+        st.rerun()
+
+    def render_history_browser(expanded: bool = False):
+        """버전 이력 목록 + 차이 비교 + 복원 (현재 기준 유무와 무관하게 사용)."""
+        with st.expander(f"🕘 기준 버전 이력 ({len(history)}개)", expanded=expanded):
+            if not history:
+                st.caption("아직 이력이 없습니다.")
+                return
+            for entry in reversed(history):
+                c = entry["criteria"]
+                ts = entry["timestamp"][:16].replace("T", " ")
+                badge = "🟢 승인됨" if c.get("status") == "approved" else "🟡 " + entry["action"]
+                with st.container(border=True):
+                    st.markdown(f"**버전 {entry['version']}** · {ts} · {badge}"
+                                + (f" · _{entry['note']}_" if entry.get("note") else ""))
+                    st.caption(f"　📋 {c.get('name', '(이름 없음)')}")
+                    prior = next(
+                        (h["criteria"] for h in history if h["version"] == entry["version"] - 1),
+                        None,
+                    )
+                    for line in diff_criteria(prior, c):
+                        st.caption(f"　{line}")
+                    if st.button(f"이 버전(v{entry['version']})으로 복원",
+                                 key=f"restore_{entry['version']}"):
+                        use_criteria(c, f"버전 {entry['version']}로 복원했습니다.")
+
+    # ── 현재 기준 파일이 없는 경우: 이력에서 이어서 쓰기/복원할 수 있게 한다 ──
+    if not has_current:
+        if prev_approved:
+            st.info(
+                f"💡 현재 작업 중인 기준은 없지만, **승인된 기준(버전 {prev_approved['version']}: "
+                f"{prev_approved['criteria'].get('name', '')})** 이 이력에 있습니다.\n\n"
+                "아래 버튼을 누르면 그 기준을 그대로 이어서 사용합니다. "
+                "(③에서 새로 제안받을 필요 없음)"
+            )
+            if st.button("↩️ 이전 승인 기준 이어서 쓰기", type="primary"):
+                use_criteria(prev_approved["criteria"],
+                             f"버전 {prev_approved['version']} 기준을")
+            render_history_browser(expanded=True)
+        elif history:
+            st.warning("현재 기준 파일이 없습니다. 아래 이력에서 복원하거나 ③에서 새로 제안받으세요.")
+            render_history_browser(expanded=True)
+        else:
+            st.warning("아직 제안된 기준이 없습니다. ③을 먼저 진행하세요.")
     else:
         crit = ClassificationCriteria(**json.loads(Path(CRITERIA_FILE).read_text(encoding="utf-8")))
         from src.classifier.criteria_proposer import CriteriaProposer
-
-        history = load_history()
-        prev_approved = get_latest_approved()
 
         # 방금 ③에서 새로 제안받아 이전 승인본과 다른 경우, 되돌리기 옵션 제공
         if (prev_approved and crit.status != "approved"
@@ -716,43 +765,15 @@ elif step.startswith("④"):
             st.info(f"💡 이전에 **승인된 기준(버전 {prev_approved['version']})** 이 있습니다. "
                     "지금 화면은 아직 승인 안 된 새 제안입니다.")
             if st.button("↩️ 이전 승인 기준 이어서 쓰기 (새 제안 취소)"):
-                Path(CRITERIA_FILE).write_text(
-                    json.dumps(prev_approved["criteria"], ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                st.success(f"버전 {prev_approved['version']}로 되돌렸습니다.")
-                st.rerun()
+                use_criteria(prev_approved["criteria"],
+                             f"버전 {prev_approved['version']}로 되돌렸습니다.")
 
         render_status_banner(crit.status)
         render_criteria(crit)
         with st.expander("원본 데이터(JSON) 보기 — 고급"):
             st.json(crit.model_dump())
 
-        # ── 버전 이력 ──
-        with st.expander(f"🕘 기준 버전 이력 ({len(history)}개)", expanded=False):
-            if not history:
-                st.caption("아직 이력이 없습니다.")
-            else:
-                for entry in reversed(history):
-                    c = entry["criteria"]
-                    ts = entry["timestamp"][:16].replace("T", " ")
-                    badge = "🟢 승인됨" if c.get("status") == "approved" else "🟡 " + entry["action"]
-                    with st.container(border=True):
-                        st.markdown(f"**버전 {entry['version']}** · {ts} · {badge}"
-                                   + (f" · _{entry['note']}_" if entry.get("note") else ""))
-                        prior = next(
-                            (h["criteria"] for h in history if h["version"] == entry["version"] - 1),
-                            None,
-                        )
-                        for line in diff_criteria(prior, c):
-                            st.caption(f"　{line}")
-                        if st.button(f"이 버전(v{entry['version']})으로 복원",
-                                    key=f"restore_{entry['version']}"):
-                            Path(CRITERIA_FILE).write_text(
-                                json.dumps(c, ensure_ascii=False, indent=2), encoding="utf-8"
-                            )
-                            st.success(f"버전 {entry['version']}로 복원했습니다.")
-                            st.rerun()
+        render_history_browser()
 
         st.subheader("AI에게 수정 요청")
         feedback = st.text_area("수정 요청 내용",

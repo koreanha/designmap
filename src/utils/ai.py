@@ -11,10 +11,12 @@ import anthropic
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 _MISSING_KEY_MESSAGE = (
-    "AI 열쇠(ANTHROPIC_API_KEY)가 설정되지 않았습니다.\n"
-    "터미널에서 아래를 실행한 뒤 다시 시도하세요 (열쇠는 sk-ant-... 로 시작):\n"
-    "  export ANTHROPIC_API_KEY=발급받은열쇠\n"
-    "영구 저장하려면:  echo 'export ANTHROPIC_API_KEY=발급받은열쇠' >> ~/.zshrc && source ~/.zshrc"
+    "AI 열쇠(ANTHROPIC_API_KEY)가 설정되지 않았습니다. (열쇠는 sk-ant-... 로 시작)\n"
+    "• 맥(macOS): 터미널에서\n"
+    "    export ANTHROPIC_API_KEY=발급받은열쇠\n"
+    "  영구 저장:  echo 'export ANTHROPIC_API_KEY=발급받은열쇠' >> ~/.zshrc && source ~/.zshrc\n"
+    "• 윈도우(Windows): 폴더 안의 'AI열쇠_설정.bat'을 더블클릭해 열쇠를 붙여넣거나,\n"
+    "  명령 프롬프트에서  setx ANTHROPIC_API_KEY 발급받은열쇠  실행 후 프로그램을 새로 켜세요."
 )
 
 

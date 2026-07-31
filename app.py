@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.7 (기준 이어서 쓰기 접근성)"
+APP_VERSION = "v3.8 (EUIPO 재추출 도구)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -449,6 +449,54 @@ if step.startswith("①"):
     )
 
     st.divider()
+    with st.expander("🔧 이미 불러온 데이터의 물품명·출원인 다시 추출 (무료, AI 미사용)"):
+        st.write("추출 규칙이 개선되었을 때, PDF를 다시 통째로 읽지 않고 "
+                 "**물품명·출원인·로카르노만** 원본 PDF에서 다시 뽑아 고칩니다. "
+                 "잘못 들어간 값(언어 코드 'FR', 타언어 물품명 등)은 빈칸으로 정리됩니다.")
+        if st.button("다시 추출 실행"):
+            from src.collectors.pdf_parser import GazetteParser
+
+            async def _reextract():
+                db = Database()
+                await db.init()
+                rows = await db.get_all_patents()
+                parser = GazetteParser(use_vision=False)
+                fixed, missing, unchanged = 0, 0, 0
+                prog = st.progress(0.0, text="다시 추출 중...")
+                for i, r in enumerate(rows, 1):
+                    meta = json.loads(r.get("metadata_json") or "{}")
+                    src = meta.get("source_pdf")
+                    if not src or not Path(src).exists():
+                        missing += 1
+                    else:
+                        try:
+                            new = parser.reextract_fields(src, r.get("patent_office", "EUIPO"))
+                        except Exception:
+                            new = {}
+                        p = row_to_patent(r)
+                        before = (p.title, p.applicant, p.locarno_class)
+                        p.title = new.get("title") or Path(src).stem
+                        p.applicant = new.get("applicant")
+                        from src.collectors.pdf_parser import _normalize_locarno
+                        p.locarno_class = _normalize_locarno(new.get("locarno_class")) or p.locarno_class
+                        if (p.title, p.applicant, p.locarno_class) != before:
+                            await db.save_patent(p)
+                            fixed += 1
+                        else:
+                            unchanged += 1
+                    prog.progress(i / len(rows), text=f"{i}/{len(rows)}건 처리")
+                return fixed, unchanged, missing
+
+            try:
+                fixed, unchanged, missing = run_async(_reextract())
+                st.success(f"완료 — 수정 {fixed}건 · 변경 없음 {unchanged}건")
+                if missing:
+                    st.warning(f"원본 PDF를 찾을 수 없는 {missing}건은 건너뛰었습니다. "
+                               "(PDF 폴더가 이동·삭제된 경우)")
+                st.rerun()
+            except Exception as e:
+                st.error(f"다시 추출 실패: {e}")
+
     with st.expander("🌐 이미 불러온 데이터의 영문 통일 (다시 읽을 필요 없음)"):
         st.write("DB에 저장된 **물품명·출원인** 중 일본어·중국어(한자·가나)인 것만 골라 영문으로 바꿉니다.")
         if st.button("영문 통일 실행", disabled=not key_ok):

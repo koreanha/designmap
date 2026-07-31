@@ -215,10 +215,14 @@ OFFICE_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {
         ],
         "title": [
             # 다국어 병기(54) 중 영어(EN) 표기를 최우선으로 선택.
-            # 'EN - ...' 이 줄 어디에 있든, 다음 언어코드( FR - / DE - ...) 직전까지 캡처
+            # 'EN - ...' 이 줄 어디에 있든, 다음 언어코드( FR - / DE - ...) 직전까지 캡처.
+            # 대시는 여러 유니코드 변형(‐‑‒–—−)을, 공백은 없는 경우까지 허용.
             re.compile(
-                r"\bEN[ \t]*[-–][ \t]*(.+?)(?=[ \t]+[A-Z]{2}[ \t]*[-–][ \t]|[\n\r]|$)",
+                r"\bEN[ \t]*[-‐‑‒–—−][ \t]*(\S.*?)"
+                r"(?=[ \t]+[A-Z]{2}[ \t]*[-‐‑‒–—−][ \t]|[\n\r]|$)",
             ),
+            # 언어 코드가 줄 끝에 있고 값이 다음 줄에 오는 형식 (2단 레이아웃)
+            re.compile(r"^[ \t]*EN[ \t]*[-‐‑‒–—−]?[ \t]*[\n\r]+[ \t]*(\S.*?)[ \t]*$", re.MULTILINE),
             re.compile(r"Product\s*(?:Indication)?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"Indication\s*of\s*(?:the\s*)?product[s]?[:\s]*(.+?)(?:\n|$)", re.MULTILINE | re.IGNORECASE),
             re.compile(r"^\s*\(?54\)?\s+(.+?)\s*$", re.MULTILINE),
@@ -455,6 +459,23 @@ class GazetteParser:
         )
         patent.id = f"{office.upper()}-{app_num}"
         return patent
+
+    def reextract_fields(self, pdf_path: str, office: str) -> dict:
+        """이미 수집한 건의 서지정보만 현재 규칙으로 다시 추출 (도면·AI 없이).
+
+        패턴이 개선됐을 때 PDF를 다시 통째로 읽지 않고 잘못된 항목만
+        바로잡기 위한 용도. 유효한 값만 담긴 dict를 반환한다.
+        """
+        text = self.extractor.extract_text(pdf_path)
+        result = self._regex_extract(text, office)
+        if not result.get("locarno_class") or not result.get("title"):
+            retry = self._regex_extract(
+                self.extractor.extract_text(pdf_path, sort=True), office
+            )
+            for k, v in retry.items():
+                if v and not result.get(k):
+                    result[k] = v
+        return _sanitize_fields(result)
 
     def parse_directory(
         self,

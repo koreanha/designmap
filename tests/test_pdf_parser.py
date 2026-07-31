@@ -447,3 +447,37 @@ def test_multilingual_product_name_not_used_as_applicant():
     for good in ["Honda Motor Co., Ltd.", "iEV1 GmbH",
                  "POLARIS INDUSTRIES INC.", "BMW AG", "SK Hynix Inc."]:
         assert _sanitize_fields({"applicant": good})["applicant"] == good, good
+
+
+def test_euipo_en_title_dash_and_layout_variants():
+    """EN 물품명 표기 변형(공백 없음·en dash·다음 줄 배치)을 모두 인식."""
+    from src.collectors.pdf_parser import _sanitize_fields
+    parser = GazetteParser(use_vision=False)
+    for label, text in {
+        "일반": "54 EN - Motor vehicles FR - Véhicules automobiles\n",
+        "공백없음": "EN-Motor vehicles\nFR-Véhicules\n",
+        "en대시": "EN – Motor vehicles\nFR – Véhicules\n",
+        "다음줄": "EN\nMotor vehicles\nFR\nVéhicules\n",
+        "목록중간": "ES - Vehículos\nEN - Motor vehicles\nPL - Samochody\n",
+    }.items():
+        r = _sanitize_fields(parser._regex_extract(text, "EUIPO"))
+        assert r.get("title") == "Motor vehicles", f"{label}: {r.get('title')!r}"
+
+
+def test_reextract_fields_from_pdf(tmp_path):
+    """개선된 규칙으로 기존 PDF에서 서지정보만 다시 추출."""
+    import fitz
+    pdf = tmp_path / "003389188-0001.pdf"
+    doc = fitz.open(); page = doc.new_page()
+    y = 80
+    for line in ["11  003389188-0001", "51  12 - 10", "54",
+                 "ES - Camiones (parte de -)", "EN - Trucks (part of -)",
+                 "PL - Samochody ciezarowe (czesc - )", "73  Volvo Group AB"]:
+        page.insert_text((72, y), line); y += 24
+    doc.save(pdf); doc.close()
+
+    out = GazetteParser(use_vision=False).reextract_fields(str(pdf), "EUIPO")
+    assert out["title"] == "Trucks (part of -)"      # 영어 우선, 폴란드어 아님
+    assert out["applicant"] == "Volvo Group AB"       # 물품명이 아닌 회사명
+    assert _normalize_locarno(out["locarno_class"]) == "12-10"
+    assert out["registration_number"] == "003389188-0001"

@@ -46,12 +46,58 @@ def _file_hash(path: str, _cache: dict = {}) -> str | None:
     return h
 
 
-def select_representative_images(rows: list[dict]) -> list[str | None]:
-    """각 건의 대표도면을 고르되, 여러 건에 공통으로 나타나는 이미지는 제외한다.
+def _color_stats(path: str, _cache: dict = {}) -> tuple[float, float, int]:
+    """(평균 채도, 유채색 픽셀 비율, 픽셀 수). 장식 이미지 판별용."""
+    if path in _cache:
+        return _cache[path]
+    try:
+        from PIL import Image as PILImage
 
-    EUIPO 등록증 표지의 로고·배경 그래픽처럼 모든 문서에 똑같이 들어 있는
-    이미지가 대표도면으로 잘못 선택되는 것을 막기 위함이다.
-    (같은 이미지가 여러 건에서 반복되면 그 건의 고유 도면일 수 없다)
+        with PILImage.open(path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((80, 80))  # 통계용이므로 축소해 빠르게
+            w, h = im.size
+            hist = im.convert("HSV").split()[1].histogram()  # 채도 채널 분포
+        total = sum(hist) or 1
+        mean_sat = sum(i * c for i, c in enumerate(hist)) / total
+        colorful = sum(c for i, c in enumerate(hist) if i > 40) / total
+        result = (mean_sat, colorful, w * h)
+    except Exception:
+        result = (0.0, 0.0, 0)
+    _cache[path] = result
+    return result
+
+
+def _image_score(path: str, repeat_count: int) -> float:
+    """대표도면 적합도 점수. 높을수록 실제 도면일 가능성이 큼.
+
+    - 여러 건에 반복 등장할수록 감점 (서식·표지 이미지)
+    - 사진처럼 채도가 높으면 감점 (EU 깃발 등 장식 배경)
+    - 지나치게 작으면 감점 (로고·아이콘)
+    """
+    score = 100.0
+    if repeat_count >= 2:
+        score -= 25.0 * min(repeat_count, 6)
+
+    mean_sat, colorful, area = _color_stats(path)
+    if mean_sat > 60:          # 원색 위주의 장식 이미지
+        score -= 60.0
+    elif mean_sat > 25:
+        score -= 20.0
+    if colorful > 0.5:         # 화면 대부분이 유채색 → 도면이 아닐 가능성
+        score -= 40.0
+    if area and area < 2500:   # 썸네일 기준 50x50 미만
+        score -= 25.0
+    return score
+
+
+def select_representative_images(rows: list[dict]) -> list[str | None]:
+    """각 건의 대표도면을 고른다.
+
+    EUIPO 등록증의 표지 그래픽·EU 깃발 배경처럼 도면이 아닌 서식 이미지가
+    선택되지 않도록, 후보마다 점수를 매겨 가장 도면다운 것을 고른다.
+    (반복 등장 횟수 + 색상 특성. 반복 횟수만으로는 소수 건에만 들어간
+    장식 이미지를 걸러내지 못하기 때문)
     """
     from collections import Counter
 
@@ -62,17 +108,18 @@ def select_representative_images(rows: list[dict]) -> list[str | None]:
     for paths in per_row:
         hashed = [(p, _file_hash(p)) for p in paths]
         row_hashes.append(hashed)
-        counts.update({h for _, h in hashed if h})
-
-    n_rows = max(len(rows), 1)
-    # 3건 이상 & 전체의 30% 이상에서 반복되면 서식 장식으로 판단
-    boilerplate = {h for h, c in counts.items() if c >= 3 and c / n_rows >= 0.3}
+        counts.update({h for _, h in hashed if h})  # 건 단위로 1회만 집계
 
     picked: list[str | None] = []
     for hashed in row_hashes:
-        choice = next((p for p, h in hashed if h and h not in boilerplate), None)
-        # 전부 공통 이미지뿐이면 어쩔 수 없이 첫 번째라도 사용
-        picked.append(choice or (hashed[0][0] if hashed else None))
+        if not hashed:
+            picked.append(None)
+            continue
+        best = max(
+            hashed,
+            key=lambda ph: _image_score(ph[0], counts.get(ph[1], 1)),
+        )
+        picked.append(best[0])
     return picked
 
 

@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v4.2 (리포트 관점 이력)"
+APP_VERSION = "v4.3 (대표도면 장식 이미지 제외)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")

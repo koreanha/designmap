@@ -301,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.8 (EUIPO 재추출 도구)"
+APP_VERSION = "v3.9 (빈칸 AI 보완)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
@@ -496,6 +496,67 @@ if step.startswith("①"):
                 st.rerun()
             except Exception as e:
                 st.error(f"다시 추출 실패: {e}")
+
+    with st.expander("🤖 빈칸인 물품명·출원인을 AI로 채우기 (빈칸만, 소량 크레딧)"):
+        st.write("규칙으로 읽지 못해 **비어 있는 항목만** AI가 원본 PDF를 보고 채웁니다. "
+                 "이미 값이 있는 건은 건드리지 않아 비용이 최소화됩니다.")
+
+        async def _count_blanks():
+            db = Database()
+            await db.init()
+            rows = await db.get_all_patents()
+            blanks = []
+            for r in rows:
+                meta = json.loads(r.get("metadata_json") or "{}")
+                src = meta.get("source_pdf")
+                need = []
+                title = (r.get("title") or "").strip()
+                # 물품명이 비었거나 파일명으로 대체된 경우도 보완 대상
+                if not title or (src and title == Path(src).stem):
+                    need.append("title")
+                if not (r.get("applicant") or "").strip():
+                    need.append("applicant")
+                if need and src and Path(src).exists():
+                    blanks.append((r, need))
+            return blanks
+
+        try:
+            blanks = run_async(_count_blanks())
+        except Exception:
+            blanks = []
+
+        st.markdown(f"**보완이 필요한 건: {len(blanks)}건**")
+        if blanks and st.button(f"🤖 {len(blanks)}건 AI로 채우기", disabled=not key_ok):
+            from src.collectors.pdf_parser import GazetteParser
+
+            async def _fill():
+                db = Database()
+                await db.init()
+                parser = GazetteParser(use_vision=True)
+                prog = st.progress(0.0, text="AI 보완 중...")
+                filled = 0
+                for i, (r, need) in enumerate(blanks, 1):
+                    meta = json.loads(r.get("metadata_json") or "{}")
+                    got = parser.vision_fill_fields(
+                        meta["source_pdf"], r.get("patent_office", "EUIPO"), need
+                    )
+                    if got:
+                        p = row_to_patent(r)
+                        if got.get("title"):
+                            p.title = got["title"]
+                        if got.get("applicant"):
+                            p.applicant = got["applicant"]
+                        await db.save_patent(p)
+                        filled += 1
+                    prog.progress(i / len(blanks), text=f"{i}/{len(blanks)}건 · 채움 {filled}")
+                return filled
+
+            try:
+                filled = run_async(_fill())
+                st.success(f"{filled}건 보완 완료")
+                st.rerun()
+            except Exception as e:
+                show_ai_error(e)
 
     with st.expander("🌐 이미 불러온 데이터의 영문 통일 (다시 읽을 필요 없음)"):
         st.write("DB에 저장된 **물품명·출원인** 중 일본어·중국어(한자·가나)인 것만 골라 영문으로 바꿉니다.")

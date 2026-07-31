@@ -477,6 +477,80 @@ class GazetteParser:
                     result[k] = v
         return _sanitize_fields(result)
 
+    def vision_fill_fields(
+        self, pdf_path: str, office: str, fields: list[str]
+    ) -> dict:
+        """지정한 항목만 Claude Vision으로 읽어 보완한다.
+
+        EUIPO 등록증처럼 레이아웃이 불규칙해 정규식으로 잡히지 않는
+        물품명·출원인을 채우기 위한 용도. 필요한 항목만 물어 비용을 줄인다.
+        """
+        import base64
+
+        from src.utils.ai import KOREAN_OUTPUT_RULE  # noqa: F401 (프롬프트 일관성)
+
+        rendered = self.extractor.render_pages(
+            pdf_path, str(Path(pdf_path).parent / ".vision_cache"),
+            dpi=150, max_pages=3,
+        )
+        if not rendered:
+            return {}
+
+        content: list[dict] = []
+        for img_path in rendered:
+            try:
+                with open(img_path, "rb") as f:
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64", "media_type": "image/png",
+                            "data": base64.standard_b64encode(f.read()).decode(),
+                        },
+                    })
+            except OSError:
+                continue
+        if not content:
+            return {}
+
+        asked = {
+            "title": "물품명 — 여러 언어로 병기되어 있으면 **영어(EN) 표기**를 고르세요.",
+            "applicant": "권리자/출원인의 **회사명 또는 개인명** (주소·대리인 사무소 이름이 아님)",
+            "locarno_class": "로카르노 국제디자인분류 (XX-XX 형식)",
+        }
+        wanted = {k: v for k, v in asked.items() if k in fields}
+        lines = "\n".join(f'- "{k}": {v}' for k, v in wanted.items())
+
+        content.append({
+            "type": "text",
+            "text": f"""이 디자인 등록증({office})에서 다음 항목만 정확히 읽어주세요.
+
+{lines}
+
+주의사항:
+- 문서에서 찾을 수 없으면 반드시 null 로 답하세요.
+- "확인 불가", "N/A" 같은 문구를 값으로 넣지 마세요.
+- 언어 코드(EN, FR, PL 등)만 답하지 마세요. 실제 내용을 답하세요.
+- 물품명은 원문(영어) 그대로 두세요. 번역하지 마세요.
+
+JSON만 출력하세요: {{{", ".join(f'"{k}": ...' for k in wanted)}}}""",
+        })
+
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=500,
+                messages=[{"role": "user", "content": content}],
+            )
+            text = "".join(
+                b.text for b in response.content if getattr(b, "type", None) == "text"
+            )
+            from src.utils.ai import parse_json_response
+            data = parse_json_response(text)
+        except Exception:
+            return {}
+
+        return _sanitize_fields({k: v for k, v in data.items() if k in wanted})
+
     def parse_directory(
         self,
         directory: str,
@@ -780,6 +854,16 @@ def _sanitize_fields(result: dict) -> dict:
             if _is_language_code_only(s):
                 continue  # 'FR' 같은 언어 코드만 남은 값은 물품명이 아님
             s = _LANG_PREFIX.sub("", s).strip() or s
+        if k in ("applicant", "designer", "title"):
+            # 짝이 맞지 않는 괄호 제거 ('TOYOTA MOTOR CORPORATION)' → '...CORPORATION')
+            while s.endswith((")", "]", "}")) and s.count(s[-1]) > s.count(
+                {")": "(", "]": "[", "}": "{"}[s[-1]]
+            ):
+                s = s[:-1].strip()
+            while s.startswith(("(", "[", "{")) and s.count(s[0]) > s.count(
+                {"(": ")", "[": "]", "{": "}"}[s[0]]
+            ):
+                s = s[1:].strip()
         if k in ("applicant", "designer"):
             # 다른 언어의 물품명이 출원인으로 잘못 들어온 경우 → 버림
             if _looks_like_multilingual_product(s):

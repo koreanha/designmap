@@ -481,3 +481,59 @@ def test_reextract_fields_from_pdf(tmp_path):
     assert out["applicant"] == "Volvo Group AB"       # 물품명이 아닌 회사명
     assert _normalize_locarno(out["locarno_class"]) == "12-10"
     assert out["registration_number"] == "003389188-0001"
+
+
+def test_unbalanced_bracket_stripped():
+    """'TOYOTA MOTOR CORPORATION)' 처럼 짝 없는 괄호 제거."""
+    from src.collectors.pdf_parser import _sanitize_fields
+    assert _sanitize_fields({"applicant": "TOYOTA MOTOR CORPORATION)"})["applicant"] \
+        == "TOYOTA MOTOR CORPORATION"
+    assert _sanitize_fields({"applicant": "(Einride AB"})["applicant"] == "Einride AB"
+    # 짝이 맞는 괄호는 그대로 유지
+    assert _sanitize_fields({"title": "Vehicles (part of -)"})["title"] == "Vehicles (part of -)"
+
+
+def test_vision_fill_fields_asks_and_validates(tmp_path):
+    """AI 보완: 요청한 항목만 질문하고, AI 오답은 걸러낸다."""
+    import fitz
+    from types import SimpleNamespace
+
+    pdf = tmp_path / "t.pdf"
+    d = fitz.open(); d.new_page().insert_text((72, 80), "EUIPO certificate")
+    d.save(pdf); d.close()
+
+    captured = {}
+
+    class Fake:
+        def __init__(self, text):
+            self.messages = self
+            self._t = text
+
+        def create(self, **kw):
+            captured.update(kw)
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=self._t)])
+
+    p = GazetteParser(use_vision=False)
+    p._client = Fake('{"title": "Trucks (part of -)", "applicant": "Volvo Group AB"}')
+    out = p.vision_fill_fields(str(pdf), "EUIPO", ["title", "applicant"])
+    assert out == {"title": "Trucks (part of -)", "applicant": "Volvo Group AB"}
+    prompt = captured["messages"][0]["content"][-1]["text"]
+    assert "영어(EN)" in prompt and "언어 코드" in prompt
+    assert "로카르노" not in prompt  # 요청하지 않은 항목은 묻지 않음
+
+    # AI가 언어코드/타언어 물품명을 답해도 저장하지 않음
+    p2 = GazetteParser(use_vision=False)
+    p2._client = Fake('{"title": "FR", "applicant": "PL - Samochody"}')
+    assert p2.vision_fill_fields(str(pdf), "EUIPO", ["title", "applicant"]) == {}
+
+    # API 오류 시 예외 대신 빈 결과
+    class Boom:
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kw):
+            raise RuntimeError("network")
+
+    p3 = GazetteParser(use_vision=False)
+    p3._client = Boom()
+    assert p3.vision_fill_fields(str(pdf), "EUIPO", ["title"]) == {}

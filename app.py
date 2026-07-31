@@ -142,16 +142,25 @@ def markdown_to_docx_bytes(md_text: str) -> bytes:
     from docx.oxml.ns import qn
     from docx.shared import Pt
 
+    KOREAN_FONT = "Malgun Gothic"
+
+    def _set_font(element_rpr):
+        """rPr 요소에 한글 폰트를 모든 스크립트(ascii/hAnsi/eastAsia/cs)로 지정."""
+        rfonts = element_rpr.get_or_add_rFonts()
+        for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+            rfonts.set(qn(attr), KOREAN_FONT)
+
     doc = Document()
 
     # 한글 폰트를 명시하지 않으면 Word가 동아시아 글꼴을 중국어 폰트로 대체해
-    # 한글이 깨져 보일 수 있다. 본문/동아시아 글꼴을 모두 맑은 고딕으로 고정.
-    normal = doc.styles["Normal"]
-    normal.font.name = "Malgun Gothic"
-    normal.font.size = Pt(10.5)
-    rpr = normal.element.get_or_add_rPr().get_or_add_rFonts()
-    for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
-        rpr.set(qn(attr), "Malgun Gothic")
+    # 한글이 깨져 보일 수 있다. 본문뿐 아니라 제목(Heading)·목록 등
+    # **모든 스타일**에 지정해야 한다 (Normal만 지정하면 제목이 깨짐).
+    for style in doc.styles:
+        try:
+            _set_font(style.element.get_or_add_rPr())
+        except (AttributeError, TypeError):
+            continue  # 폰트를 가질 수 없는 스타일(표/번호 매기기 등)은 건너뜀
+    doc.styles["Normal"].font.size = Pt(10.5)
 
     def add_runs(paragraph, text: str):
         for part in re.split(r"(\*\*.+?\*\*)", text):
@@ -201,6 +210,19 @@ def markdown_to_docx_bytes(md_text: str) -> bytes:
         else:
             add_runs(doc.add_paragraph(), line)
         i += 1
+
+    # 스타일이 덮어써질 수 있으므로, 실제 글자(run) 하나하나에도 직접 지정한다.
+    def _apply_to_runs(paragraphs):
+        for p in paragraphs:
+            for run in p.runs:
+                run.font.name = KOREAN_FONT
+                _set_font(run._element.get_or_add_rPr())
+
+    _apply_to_runs(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                _apply_to_runs(cell.paragraphs)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -279,7 +301,7 @@ def render_criteria(crit):
 
 
 # ─────────────────────────────── 사이드바: 상태 ───────────────────────────────
-APP_VERSION = "v3.4 (한글 우선 산출물)"
+APP_VERSION = "v3.5 (Word 제목 한글 폰트)"
 
 st.sidebar.title("📐 DesignMap")
 st.sidebar.caption(f"디자인권 분류 · 트렌드 예측 · {APP_VERSION}")
